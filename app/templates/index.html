@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>스트리밍 챗봇</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div id="chat-container">
+    <div id="chat-box"></div>
+    <input type="text" id="user-input" placeholder="메시지를 입력하세요">
+    <button onclick="sendMessage()">보내기</button>
+  </div>
+
+  <script>
+    function sendMessage() {
+      const input = document.getElementById("user-input");
+      const chatBox = document.getElementById("chat-box");
+      const message = input.value;
+      input.value = "";
+
+      const eventSource = new EventSource(`/chat/stream?message=${encodeURIComponent(message)}`);
+
+      eventSource.onmessage = function(event) {
+        if (event.data === "[DONE]") {
+          eventSource.close();
+        } else {
+          chatBox.innerHTML += `<div>${event.data}</div>`;
+        }
+      };
+
+      eventSource.onerror = function() {
+        eventSource.close();
+        chatBox.innerHTML += `<div><em>오류가 발생했습니다.</em></div>`;
+      };
+    }
+  </script>
+</body>
+</html>
