@@ -169,6 +169,7 @@
 
   <script>
     document.addEventListener("DOMContentLoaded", function () {
+      const API_BASE = window.location.origin;
       const chatInput = document.getElementById("chat-input-field");
       const sendButton = document.getElementById("sendButton");
       const chatBody = document.getElementById("chat-body");
@@ -187,15 +188,14 @@
         partialResponse = "";
         lastBotMessageDiv = null;
 
-        fetch('http://127.0.0.1:8000/chat/stream', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+        fetch(`${API_BASE}/chat/stream`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ message: message })
         })
           .then(response => {
-            if (!response.ok) {
-              throw new Error('서버 응답 오류');
-            }
+            if (!response.ok) throw new Error("서버 응답 오류");
+
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
 
@@ -225,6 +225,7 @@
                 }
               }
             }
+
             processStream();
           })
           .catch(error => {
