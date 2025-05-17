@@ -162,33 +162,94 @@
     <div id="chat-input">
       <div class="input-wrapper">
         <input type="text" id="chat-input-field" placeholder="메시지를 입력해주세요.">
-        <button class="send-icon" id="sendButton" onclick="sendMessage()">→</button>
+        <button class="send-icon" id="sendButton">→</button>
       </div>
     </div>
   </div>
 
   <script>
-    function sendMessage() {
-      const input = document.getElementById("user-input");
-      const chatBox = document.getElementById("chat-box");
-      const message = input.value;
-      input.value = "";
+    document.addEventListener("DOMContentLoaded", function () {
+      const chatInput = document.getElementById("chat-input-field");
+      const sendButton = document.getElementById("sendButton");
+      const chatBody = document.getElementById("chat-body");
 
-      const eventSource = new EventSource(`/chat/stream?message=${encodeURIComponent(message)}`);
+      let lastBotMessageDiv = null;
+      let partialResponse = "";
 
-      eventSource.onmessage = function (event) {
-        if (event.data === "[DONE]") {
-          eventSource.close();
-        } else {
-          chatBox.innerHTML += `<div>${event.data}</div>`;
+      function sendMessage() {
+        const message = chatInput.value.trim();
+        if (message === "") return;
+
+        appendMessage("user", message);
+        chatInput.value = "";
+        sendButton.style.display = "none";
+
+        partialResponse = "";
+        lastBotMessageDiv = null;
+
+        fetch('http://127.0.0.1:8000/chat/stream', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: message })
+        })
+          .then(response => {
+            if (!response.ok) {
+              throw new Error('서버 응답 오류');
+            }
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+
+            async function processStream() {
+              while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                const chunk = decoder.decode(value, { stream: true });
+                const lines = chunk.split("\n");
+                for (let line of lines) {
+                  if (line.startsWith("data: ")) {
+                    const text = line.slice("data: ".length);
+                    if (text !== "[DONE]") {
+                      partialResponse += text;
+
+                      if (!lastBotMessageDiv) {
+                        lastBotMessageDiv = document.createElement("div");
+                        lastBotMessageDiv.classList.add("message", "bot");
+                        chatBody.appendChild(lastBotMessageDiv);
+                      }
+
+                      lastBotMessageDiv.textContent = partialResponse;
+                      chatBody.scrollTop = chatBody.scrollHeight;
+                    }
+                  }
+                }
+              }
+            }
+            processStream();
+          })
+          .catch(error => {
+            console.error("메시지 전송 오류:", error);
+            appendMessage("bot", "오류가 발생했습니다. 다시 시도해주세요.");
+          });
+      }
+
+      function appendMessage(sender, message) {
+        const messageDiv = document.createElement("div");
+        messageDiv.classList.add("message", sender);
+        messageDiv.textContent = message;
+        chatBody.appendChild(messageDiv);
+        chatBody.scrollTop = chatBody.scrollHeight;
+      }
+
+      sendButton.addEventListener("click", sendMessage);
+
+      chatInput.addEventListener("keypress", function (event) {
+        if (event.key === "Enter" && !event.shiftKey) {
+          event.preventDefault();
+          sendMessage();
         }
-      };
-
-      eventSource.onerror = function () {
-        eventSource.close();
-        chatBox.innerHTML += `<div><em>오류가 발생했습니다.</em></div>`;
-      };
-    }
+      });
+    });
   </script>
 </body>
 
