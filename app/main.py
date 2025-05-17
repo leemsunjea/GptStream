@@ -6,7 +6,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
-from openai import OpenAI
+import openai
 from typing import Dict
 from pathlib import Path
 import logging
@@ -22,7 +22,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)  # ✅ 이 줄 반드시 필요
 
 load_dotenv()
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+openai.api_key = os.getenv("OPENAI_API_KEY")
 
 app = FastAPI()
 
@@ -53,7 +53,7 @@ async def chat_stream(request: Request):
 
         def event_stream():
             try:
-                response = client.chat.completions.create(
+                response = openai.chat.completions.create(
                     model="gpt-4",
                     messages=[{"role": "user", "content": message}],
                     stream=True
