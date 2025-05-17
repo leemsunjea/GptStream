@@ -167,91 +167,82 @@
     </div>
   </div>
 
-  <script>
-    document.addEventListener("DOMContentLoaded", function () {
-      const API_BASE = window.location.origin;
-      const chatInput = document.getElementById("chat-input-field");
-      const sendButton = document.getElementById("sendButton");
-      const chatBody = document.getElementById("chat-body");
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    const API_BASE = window.location.origin;
+    const input = document.getElementById("chat-input-field");
+    const chatBox = document.getElementById("chat-body");
+    const sendButton = document.getElementById("sendButton");
+    let lastBotDiv = null;
+    let partial = "";
 
-      let lastBotMessageDiv = null;
-      let partialResponse = "";
+    function sendMessage() {
+      const message = input.value.trim();
+      if (!message) return;
 
-      function sendMessage() {
-        const message = chatInput.value.trim();
-        if (message === "") return;
+      appendMessage("user", message);
+      input.value = "";
+      sendButton.style.display = "none";
 
-        appendMessage("user", message);
-        chatInput.value = "";
-        sendButton.style.display = "none";
+      partial = "";
+      lastBotDiv = null;
 
-        partialResponse = "";
-        lastBotMessageDiv = null;
+      fetch(`${API_BASE}/chat/stream`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: message })
+      }).then(response => {
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
 
-        fetch(`${API_BASE}/chat/stream`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message: message })
-        })
-          .then(response => {
-            if (!response.ok) throw new Error("서버 응답 오류");
+        async function readStream() {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            const text = decoder.decode(value, { stream: true });
+            const lines = text.split("\n");
 
-            const reader = response.body.getReader();
-            const decoder = new TextDecoder();
-
-            async function processStream() {
-              while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
-
-                const chunk = decoder.decode(value, { stream: true });
-                const lines = chunk.split("\n");
-                for (let line of lines) {
-                  if (line.startsWith("data: ")) {
-                    const text = line.slice("data: ".length);
-                    if (text !== "[DONE]") {
-                      partialResponse += text;
-
-                      if (!lastBotMessageDiv) {
-                        lastBotMessageDiv = document.createElement("div");
-                        lastBotMessageDiv.classList.add("message", "bot");
-                        chatBody.appendChild(lastBotMessageDiv);
-                      }
-
-                      lastBotMessageDiv.textContent = partialResponse;
-                      chatBody.scrollTop = chatBody.scrollHeight;
-                    }
-                  }
+            for (let line of lines) {
+              if (line.startsWith("data: ")) {
+                const content = line.slice(6);
+                if (content === "[DONE]") return;
+                partial += content;
+                if (!lastBotDiv) {
+                  lastBotDiv = document.createElement("div");
+                  lastBotDiv.classList.add("message", "bot");
+                  chatBox.appendChild(lastBotDiv);
                 }
+                lastBotDiv.textContent = partial;
+                chatBox.scrollTop = chatBox.scrollHeight;
               }
             }
-
-            processStream();
-          })
-          .catch(error => {
-            console.error("메시지 전송 오류:", error);
-            appendMessage("bot", "오류가 발생했습니다. 다시 시도해주세요.");
-          });
-      }
-
-      function appendMessage(sender, message) {
-        const messageDiv = document.createElement("div");
-        messageDiv.classList.add("message", sender);
-        messageDiv.textContent = message;
-        chatBody.appendChild(messageDiv);
-        chatBody.scrollTop = chatBody.scrollHeight;
-      }
-
-      sendButton.addEventListener("click", sendMessage);
-
-      chatInput.addEventListener("keypress", function (event) {
-        if (event.key === "Enter" && !event.shiftKey) {
-          event.preventDefault();
-          sendMessage();
+          }
         }
+
+        readStream();
+      }).catch(err => {
+        console.error("전송 오류:", err);
+        appendMessage("bot", "오류가 발생했습니다. 다시 시도해주세요.");
       });
+    }
+
+    function appendMessage(role, message) {
+      const msg = document.createElement("div");
+      msg.classList.add("message", role);
+      msg.textContent = message;
+      chatBox.appendChild(msg);
+      chatBox.scrollTop = chatBox.scrollHeight;
+    }
+
+    sendButton.addEventListener("click", sendMessage);
+    input.addEventListener("keypress", function (e) {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        sendMessage();
+      }
     });
-  </script>
+  });
+</script>
 </body>
 
 </html>
