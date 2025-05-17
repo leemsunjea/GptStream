@@ -1,15 +1,16 @@
-import logging
+
 from fastapi import FastAPI, Request
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
-from openai import OpenAI
-import os
-from dotenv import load_dotenv
-from typing import Dict
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
+from dotenv import load_dotenv
+from openai import OpenAI
+from typing import Dict
 from pathlib import Path
+import logging
+import os
 
 # 로깅 설정
 logging.basicConfig(
@@ -20,8 +21,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)  # ✅ 이 줄 반드시 필요
 
-load_dotenv()  # 로컬 실행 시 .env에서 로드
-client = OpenAI()  # ✅ 환경변수에서 OPENAI_API_KEY 자동 인식
+load_dotenv()
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 app = FastAPI()
 
@@ -32,6 +33,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
 
 BASE_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
