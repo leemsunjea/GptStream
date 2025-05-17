@@ -1,15 +1,171 @@
 <!DOCTYPE html>
 <html lang="ko">
+
 <head>
   <meta charset="UTF-8">
   <title>스트리밍 챗봇</title>
   <link rel="stylesheet" href="/static/style.css">
+
+  <style>
+    /* 채팅 버튼 및 팝업창 관련 스타일 */
+    #chat-popup {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      margin: auto;
+      width: 430px;
+      height: 705px;
+      background-color: #fff;
+      border-radius: 30px;
+      box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3);
+      opacity: 1;
+      transition: opacity 0.3s ease, transform 0.3s ease;
+      z-index: 999;
+      pointer-events: auto;
+      /* 중앙 정렬을 위해 transform 제거 */
+    }
+
+    #chat-popup.show {
+      opacity: 1;
+      transform: translateY(0);
+      pointer-events: auto;
+      /* 챗봇이 활성화되었을 때만 클릭 가능 */
+    }
+
+    /* 챗봇 버튼 스타일 */
+    #chat-button {
+      position: fixed;
+      bottom: 20px;
+      right: 50px;
+      width: 60px;
+      height: 60px;
+      border-radius: 50%;
+      background-color: #007bff;
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+      cursor: pointer;
+      transition: transform 0.3s ease;
+      z-index: 1000;
+    }
+
+    #chat-button:hover {
+      transform: scale(1.1);
+    }
+
+    #chat-button img {
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+    }
+
+    /* 헤더 영역 */
+    #chat-header {
+      background-color: transparent;
+      padding: 20px;
+      font-size: 16px;
+      text-align: center;
+      border-bottom: 1px solid #ddd;
+    }
+
+    #chat-svg {
+      margin-bottom: 0.5px;
+    }
+
+    #chat-header small {
+      display: block;
+      font-size: 12px;
+      color: #666;
+    }
+
+    /* 대화 영역 */
+    #chat-body {
+      padding: 10px;
+      height: calc(95% - 140px);
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* 메시지 스타일 */
+    .message {
+      padding: 10px;
+      margin: 5px;
+      border-radius: 10px;
+      max-width: 80%;
+    }
+
+    .message.bot {
+      background-color: #e9ecef;
+      align-self: flex-start;
+    }
+
+    .message.user {
+      background-color: #007bff;
+      color: #fff;
+      align-self: flex-end;
+    }
+
+    /* 입력창 영역 */
+    #chat-input {
+      padding: 10px;
+      border-top: 1px solid #ddd;
+    }
+
+    .input-wrapper {
+      display: flex;
+      align-items: center;
+      background: #f1f1f1;
+      border-radius: 30px;
+      padding: 5px 10px;
+    }
+
+    .input-wrapper input {
+      flex: 1;
+      border: none;
+      background: transparent;
+      outline: none;
+      font-size: 16px;
+      padding: 10px;
+    }
+
+    /* 보내기 버튼 스타일 */
+    .send-icon {
+      cursor: pointer;
+      background: none;
+      border: none;
+      font-size: 20px;
+      display: none;
+    }
+  </style>
 </head>
+
 <body>
-  <div id="chat-container">
-    <div id="chat-box"></div>
-    <input type="text" id="user-input" placeholder="메시지를 입력하세요">
-    <button onclick="sendMessage()">보내기</button>
+  <!-- 채팅 버튼 -->
+  <!-- <div id="chat-button">
+    <img src="https://encrypted-tbn3.gstatic.com/images?q=tbn:ANd9GcQNXaujUJBXZrKXOPikVUxrdGgab_04TmHuuKiEyZRhkWLvpStV"
+      alt="Chat Button">
+  </div> -->
+
+  <!-- 채팅 팝업창 -->
+  <div id="chat-popup">
+    <div id="chat-header">
+      <div id="chat-svg">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="#007bff" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="12" cy="12" r="10" />
+        </svg>
+      </div>
+      <small>저희 챗봇과 대화하세요!</small>
+    </div>
+    <div id="chat-body">
+      <div class="message bot">안녕하세요! 무엇을 도와드릴까요?</div>
+    </div>
+    <div id="chat-input">
+      <div class="input-wrapper">
+        <input type="text" id="chat-input-field" placeholder="메시지를 입력해주세요.">
+        <button class="send-icon" id="sendButton" onclick="sendMessage()">→</button>
+      </div>
+    </div>
   </div>
 
   <script>
@@ -21,7 +177,7 @@
 
       const eventSource = new EventSource(`/chat/stream?message=${encodeURIComponent(message)}`);
 
-      eventSource.onmessage = function(event) {
+      eventSource.onmessage = function (event) {
         if (event.data === "[DONE]") {
           eventSource.close();
         } else {
@@ -29,11 +185,12 @@
         }
       };
 
-      eventSource.onerror = function() {
+      eventSource.onerror = function () {
         eventSource.close();
         chatBox.innerHTML += `<div><em>오류가 발생했습니다.</em></div>`;
       };
     }
   </script>
 </body>
+
 </html>
