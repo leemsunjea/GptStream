@@ -27,7 +27,7 @@ app.add_middleware(
 # main.py 기준으로 경로 설정
 BASE_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
-app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
+# app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 
 # 라우팅
 @app.get("/", response_class=HTMLResponse)
