@@ -10,13 +10,11 @@ from typing import Dict
 # 로깅 설정
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.StreamHandler(),  # 콘솔 출력
-        logging.FileHandler('app.log')  # 파일 출력
+        logging.StreamHandler()
     ]
 )
-logger = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)  # ✅ 이 줄 반드시 필요
 
 load_dotenv()
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
