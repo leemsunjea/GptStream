@@ -12,9 +12,6 @@ RUN apt-get update && \
 COPY requirements.txt .
 RUN pip install --upgrade pip && pip install --no-cache-dir -r requirements.txt
 
-# 환경변수 파일 복사 (Cloudtype에서 자동 주입 가능 시 생략 가능)
-COPY .env .env
-
 # 앱 소스 복사
 COPY ./app ./app
 
