@@ -8,21 +8,18 @@ RUN apt-get update && \
     apt-get install -y build-essential libpq-dev && \
     rm -rf /var/lib/apt/lists/*
 
-# 종속성 설치
+# 종속성 복사 및 설치
 COPY requirements.txt .
 RUN pip install --upgrade pip && pip install --no-cache-dir -r requirements.txt
 
-# ✅ 'app' 폴더 내부 파일을 현재 경로에 복사 (중첩 방지)
-COPY ./app .   
+# 전체 프로젝트 복사 (db, app, static 등 포함됨)
+COPY . .
 
 # PYTHONPATH 설정 → 'from db.database' 등 가능
 ENV PYTHONPATH=/app
-
-# 실행 디렉토리 그대로 유지
-WORKDIR /app
 
 # 포트 노출
 EXPOSE 8000
 
 # 실행 명령
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
