@@ -2,7 +2,7 @@
 
 from fastapi import FastAPI, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
-from db.database import async_session
+from app.db.database import async_session
 from app.routes import home, chat
 
 app = FastAPI()
