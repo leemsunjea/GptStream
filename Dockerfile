@@ -15,11 +15,11 @@ RUN pip install --upgrade pip && pip install --no-cache-dir -r requirements.txt
 # 앱 소스 복사
 COPY ./app ./app
 
-# 앱 실행 디렉토리 변경 (main.py가 app/main.py라면)
+# 실행 디렉토리 변경 (main.py가 app 디렉토리 안에 있음)
 WORKDIR /app/app
 
 # 포트 노출
 EXPOSE 8000
 
-# 실행 명령
+# ✅ 실행 명령 (문자열 쪼개기)
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
