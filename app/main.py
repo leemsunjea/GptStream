@@ -2,8 +2,7 @@
 
 from fastapi import FastAPI, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
-# app/main.py
-from app.db.database import async_session  # ✅ 이렇게 고쳐야 함
+from db.database import async_session
 from app.routes import home, chat
 
 app = FastAPI()
