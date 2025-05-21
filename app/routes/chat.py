@@ -5,6 +5,8 @@ from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 import openai
 from app.config import settings
+from db.models import ChatHistory
+from db.database import async_session
 
 router = APIRouter()
 
@@ -16,6 +18,7 @@ async def chat_stream(request: Request):
     message = data.get("message", "")
 
     async def event_stream():
+        full_response = ""
         response = openai.ChatCompletion.create(
             model="gpt-4",
             messages=[{"role": "user", "content": message}],
@@ -25,8 +28,14 @@ async def chat_stream(request: Request):
             if chunk.choices:
                 content = chunk.choices[0].delta.get("content")
                 if content:
+                    full_response += content
                     yield f"data: {content}\n\n"
-                    await asyncio.sleep(0)  # ⭐ flush 보장
+                    await asyncio.sleep(0)
+        # 대화 저장
+        async with async_session() as session:
+            chat = ChatHistory(user_message=message, bot_response=full_response)
+            session.add(chat)
+            await session.commit()
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
