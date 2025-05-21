@@ -1,6 +1,6 @@
 # models.py
 from sqlalchemy import Column, Integer, Text, DateTime, func
-from db import Base
+from db.database import Base  # 수정: db에서가 아니라 db.database에서 import
 
 class ChatHistory(Base):
     __tablename__ = "chat_history"
