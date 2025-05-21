@@ -1,5 +1,9 @@
 # app/db/database.py
 
+from sqlalchemy.orm import declarative_base
+
+Base = declarative_base()
+
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 import os
