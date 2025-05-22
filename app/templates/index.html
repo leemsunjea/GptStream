@@ -9,7 +9,8 @@
   <style>
     /* 채팅 버튼 및 팝업창 관련 스타일 */
     #chat-popup {
-      position: static; /* fixed 해제 */
+      position: static;
+      /* fixed 해제 */
       margin: 0;
       width: 430px;
       height: 705px;
@@ -164,7 +165,8 @@
 
     /* 시스템 로그 팝업창: 오른쪽에 위치 */
     #system-log-popup {
-      position: static; /* fixed 해제 */
+      position: static;
+      /* fixed 해제 */
       margin: 0;
       width: 430px;
       height: 705px;
@@ -205,7 +207,8 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      gap: 60px; /* 두 창 사이 간격 */
+      gap: 60px;
+      /* 두 창 사이 간격 */
       background: #f8f9fa;
     }
   </style>
@@ -233,7 +236,7 @@
     </div>
     <!-- PDF 업로드 영역 -->
     <div id="pdf-upload" style="padding: 10px; border-top: 1px solid #ddd;">
-      <input type="file" id="pdfInput" accept="application/pdf" />
+      <input type="file" id="pdfInput" accept="application/pdf" style="display: none;" />
       <button id="uploadPdfBtn">PDF 업로드</button>
     </div>
     <div id="chat-input">
@@ -326,6 +329,13 @@
                 }
                 lastBotDiv.textContent = partial;
                 chatBox.scrollTop = chatBox.scrollHeight;
+
+                // 챗봇 응답 스트림 처리
+                if (isChatStream) {
+                  appendMessage("bot", content); // 채팅창에만 출력
+                } else if (isSystemLog) {
+                  appendSystemLog(logMsg); // 시스템 로그창에만 출력
+                }
               }
             }
           }
@@ -419,6 +429,19 @@
         }
       }
 
+      // PDF 업로드 버튼 클릭 시 파일 선택창 열기
+      uploadButton.addEventListener("click", function () {
+        fileInput.value = ""; // 같은 파일 연속 선택 시에도 이벤트 발생하도록 초기화
+        fileInput.click();
+      });
+
+      // 파일 선택 시 자동 업로드
+      fileInput.addEventListener("change", function () {
+        if (fileInput.files.length > 0) {
+          uploadPdf();
+        }
+      });
+
       // 이벤트 바인딩
       sendButton.addEventListener("click", sendMessage);
       input.addEventListener("keypress", function (e) {
@@ -427,7 +450,6 @@
           sendMessage();
         }
       });
-      uploadButton.addEventListener("click", uploadPdf);
     });
   </script>
 </body>

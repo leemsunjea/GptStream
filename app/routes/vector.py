@@ -38,8 +38,12 @@ async def upload_pdf(file: UploadFile = File(...)):
             filename = safe_filename(file.filename)
             file_path = upload_dir / f"temp_{filename}"
 
+            # 파일 저장
             with open(file_path, "wb") as f:
                 f.write(await file.read())
+            # 여기서 f는 더 이상 사용하지 마세요!
+
+            # 이후 file_path를 사용해 fitz.open(str(file_path)) 등으로 새로 엽니다.
             logs.append("PDF 파일이 서버에 저장됨.")
 
             # 2. DB에 PDF 원문 저장 및 문단 단위 임베딩
