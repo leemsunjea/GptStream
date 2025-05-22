@@ -136,10 +136,47 @@
       border: none;
       font-size: 20px;
     }
+
+    /* 로그 영역 스타일 */
+    #log-container {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      width: 300px;
+      height: 200px;
+      background-color: rgba(255, 255, 255, 0.9);
+      border-radius: 10px;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+      padding: 10px;
+      overflow-y: auto;
+      font-size: 12px;
+      z-index: 1000;
+    }
+
+    .log-entry {
+      margin-bottom: 5px;
+      padding: 5px;
+      border-bottom: 1px solid #eee;
+    }
+
+    .log-timestamp {
+      color: #666;
+      font-size: 10px;
+    }
+
+    .log-message {
+      color: #333;
+    }
   </style>
 </head>
 
 <body>
+  <!-- 로그 컨테이너 -->
+  <div id="log-container">
+    <h3>System Logs</h3>
+    <div id="log-entries"></div>
+  </div>
+
   <!-- 채팅 버튼 -->
   <!-- <div id="chat-button">
     <img src="https://encrypted-tbn3.gstatic.com/images?q=tbn:ANd9GcQNXaujUJBXZrKXOPikVUxrdGgab_04TmHuuKiEyZRhkWLvpStV"
@@ -173,9 +210,47 @@
     const input = document.getElementById("chat-input-field");
     const chatBox = document.getElementById("chat-body");
     const sendButton = document.getElementById("sendButton");
+    const logEntries = document.getElementById("log-entries");
     let lastBotDiv = null;
     let partial = "";
+    let ws = null;
 
+    // WebSocket 연결
+    function connectWebSocket() {
+      ws = new WebSocket(`ws://${window.location.host}/ws`);
+      
+      ws.onmessage = function(event) {
+        const data = JSON.parse(event.data);
+        if (data.type === "log") {
+          appendLog(data.message);
+        }
+      };
+
+      ws.onclose = function() {
+        console.log("WebSocket connection closed. Reconnecting...");
+        setTimeout(connectWebSocket, 1000);
+      };
+    }
+
+    // 로그 추가 함수
+    function appendLog(message) {
+      const logEntry = document.createElement("div");
+      logEntry.classList.add("log-entry");
+      
+      const timestamp = document.createElement("div");
+      timestamp.classList.add("log-timestamp");
+      timestamp.textContent = new Date().toLocaleTimeString();
+      
+      const logMessage = document.createElement("div");
+      logMessage.classList.add("log-message");
+      logMessage.textContent = message;
+      
+      logEntry.appendChild(timestamp);
+      logEntry.appendChild(logMessage);
+      logEntries.insertBefore(logEntry, logEntries.firstChild);
+    }
+
+    // 기존 메시지 전송 함수
     function sendMessage() {
       const message = input.value.trim();
       if (!message) return;
@@ -233,6 +308,9 @@
       chatBox.appendChild(msg);
       chatBox.scrollTop = chatBox.scrollHeight;
     }
+
+    // WebSocket 연결 시작
+    connectWebSocket();
 
     sendButton.addEventListener("click", sendMessage);
     input.addEventListener("keypress", function (e) {
