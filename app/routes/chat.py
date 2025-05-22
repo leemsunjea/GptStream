@@ -23,14 +23,14 @@ async def chat_stream(request: Request):
 
     # 🔍 질문을 벡터화하고 관련 문단 검색
     context_text = ""
+    referenced_docs = []
     if index.ntotal > 0:
         query_embedding = get_embedding(message)
         D, I = index.search(np.array([query_embedding]), k=3)
-        related_docs = []
         if I is not None and len(I[0]) > 0:
-            related_docs = [doc_store[i] for i in I[0] if i >= 0 and i < len(doc_store)]
-        if related_docs:
-            context_text = "\n\n".join(related_docs)
+            referenced_docs = [doc_store[i] for i in I[0] if i >= 0 and i < len(doc_store)]
+        if referenced_docs:
+            context_text = "\n\n".join(referenced_docs)
 
     # system 프롬프트 생성
     if context_text:
@@ -50,7 +50,7 @@ async def chat_stream(request: Request):
         full_response = ""
         try:
             response = client.chat.completions.create(
-                model="gpt-4o",  # 또는 "gpt-4.0", "gpt-3.5-turbo" 등
+                model="gpt-4o",
                 messages=messages,
                 stream=True
             )
@@ -61,11 +61,20 @@ async def chat_stream(request: Request):
                     yield f"data: {content}\n\n"
                     await asyncio.sleep(0)
 
+            # 참고한 문단을 스트림 마지막에 함께 출력
+            if referenced_docs:
+                yield f"data: [참고한 문단]\n\n"
+                for idx, doc in enumerate(referenced_docs, 1):
+                    yield f"data: [문단 {idx}]\n{doc}\n\n"
+
             yield "data: [DONE]\n\n"
 
             # DB 저장
             async with async_session() as session:
-                chat = ChatHistory(user_message=message, bot_response=full_response)
+                chat = ChatHistory(
+                    user_message=message,
+                    bot_response=full_response
+                )
                 session.add(chat)
                 await session.commit()
         except Exception as e:
