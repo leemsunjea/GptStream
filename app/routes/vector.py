@@ -70,7 +70,7 @@ async def upload_pdf(file: UploadFile = File(...)):
                                 "embedding": embedding.tobytes()
                             })
                             vector_count += 1
-                            logs.append(f"{i+1}페이지/{len(doc)} 중 {j+1}문단/{len(paragraphs)} 처리 완료")
+                            yield f"data: {i+1}페이지/{len(doc)} 중 {j+1}문단/{len(paragraphs)} 처리 완료\n\n"
                         # BATCH_SIZE마다 DB에 저장
                         if len(batch) >= BATCH_SIZE:
                             await session.execute(insert(embeddings), batch)
