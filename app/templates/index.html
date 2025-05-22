@@ -184,10 +184,29 @@
       padding: 10px;
       height: calc(100% - 80px);
       overflow-y: auto;
+      /* 세로 스크롤 자동 */
+      overflow-x: hidden;
+      /* 가로 스크롤 숨김 */
       display: flex;
       flex-direction: column;
       font-size: 15px;
       color: #333;
+      /* 스크롤바 항상 오른쪽에 표시 */
+      scrollbar-width: thin;
+      /* Firefox */
+      scrollbar-color: #bbb #f3f3f3;
+    }
+
+    /* 크롬, 엣지, 사파리용 스크롤바 스타일 */
+    #system-log-body::-webkit-scrollbar {
+      width: 8px;
+      background: #f3f3f3;
+      border-radius: 8px;
+    }
+
+    #system-log-body::-webkit-scrollbar-thumb {
+      background: #bbb;
+      border-radius: 8px;
     }
 
     /* 시스템 로그 메시지 스타일 */
@@ -319,14 +338,16 @@
             const lines = text.split("\n");
             for (let line of lines) {
               if (line.startsWith("data: ")) {
-                const content = line.slice(6);
+                let content = line.slice(6);
+                // '~~'를 <br>로 변환
+                content = content.replace(/~~/g, "<br>");
                 partial += content;
                 if (!lastBotDiv) {
                   lastBotDiv = document.createElement("div");
                   lastBotDiv.classList.add("message", "bot");
                   chatBox.appendChild(lastBotDiv);
                 }
-                lastBotDiv.textContent = partial;
+                lastBotDiv.innerHTML = partial; // textContent → innerHTML로 변경!
                 chatBox.scrollTop = chatBox.scrollHeight;
               }
             }
