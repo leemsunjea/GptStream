@@ -38,6 +38,8 @@ async def upload_pdf(file: UploadFile = File(...)):
                 doc_store.append(text)
 
         os.remove(file_path)
+        print("저장된 페이지 수:", len(doc_store))
+        print("faiss index 벡터 수:", index.ntotal)
         return {"status": "uploaded and indexed"}
     except Exception as e:
         import traceback
