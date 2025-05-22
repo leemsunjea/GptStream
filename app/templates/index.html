@@ -378,63 +378,20 @@
             body: formData
           });
 
-          const contentType = response.headers.get("content-type") || "";
+          const result = await response.json();
 
-          if (contentType.includes("text/event-stream")) {
-            const reader = response.body.getReader();
-            const decoder = new TextDecoder();
-
-            while (true) {
-              const { done, value } = await reader.read();
-              if (done) break;
-              const text = decoder.decode(value, { stream: true });
-              const lines = text.split("\n");
-
-              for (let line of lines) {
-                line = line.trim();
-                if (!line.startsWith("data:")) continue;
-
-                const logMsg = line.slice(5).trim(); // "data:" 이후 내용
-                if (logMsg && logMsg !== "[DONE]") {
-                  appendSystemLog(logMsg); // 로그 메시지 출력
-                }
-              }
-            }
-          } else if (contentType.includes("application/json")) {
-            let result;
-            try {
-              result = await response.json();
-            } catch (e) {
-              const errorText = await response.text();
-              appendMessage("bot", "서버 응답 파싱에 실패했습니다.");
-              appendSystemLog(`서버 응답 파싱 실패: ${errorText}`);
-              return;
-            }
-
-            processing = false;
-            clearInterval(processingInterval);
-
-            if (response.ok) {
-              appendMessage("bot", `PDF가 성공적으로 업로드되어 인덱싱되었습니다. (저장된 페이지 수: ${result.page_count}, 벡터 수: ${result.vector_count})`);
-              if (result.logs && Array.isArray(result.logs)) {
-                result.logs.forEach(msg => appendSystemLog(msg));
-              }
-            } else {
-              appendMessage("bot", `업로드 실패: ${result.detail || "서버 오류"}`);
-              if (result.logs && Array.isArray(result.logs)) {
-                result.logs.forEach(msg => appendSystemLog(msg));
-              } else {
-                appendSystemLog(`업로드 실패: ${result.detail || "서버 오류"}`);
-              }
+          if (response.ok && result.success) {
+            appendMessage("bot", `PDF 업로드 완료. (저장된 페이지 수: ${result.page_count})`);
+            if (result.logs && Array.isArray(result.logs)) {
+              result.logs.forEach(msg => appendSystemLog(msg));
             }
           } else {
-            appendMessage("bot", "알 수 없는 응답 형식입니다.");
-            appendSystemLog("지원하지 않는 서버 응답 형식입니다.");
+            appendMessage("bot", `PDF 업로드 실패: ${result.detail || "서버 오류"}`);
+            if (result.logs && Array.isArray(result.logs)) {
+              result.logs.forEach(msg => appendSystemLog(msg));
+            }
           }
-
         } catch (error) {
-          processing = false;
-          clearInterval(processingInterval);
           console.error("업로드 오류:", error);
           appendMessage("bot", "PDF 업로드 중 오류가 발생했습니다.");
           appendSystemLog("PDF 업로드 중 오류가 발생했습니다.");

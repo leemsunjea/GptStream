@@ -37,82 +37,87 @@ def split_text_to_paragraphs(text: str):
     return [p.strip() for p in re.split(r'\n{2,}|\r{2,}|\n|\r', text) if p.strip()]
 
 @router.post("/upload_pdf")
-async def upload_pdf(file: UploadFile = File(...), request: Request = None):
-    async def event_stream():
-        file_path = None
+async def upload_pdf(file: UploadFile = File(...)):
+    logs = []
+    file_path = None
+    try:
+        file_path = await save_upload_file(file, upload_dir)
+        logs.append("PDF 저장 완료")
+
         try:
-            file_path = await save_upload_file(file, upload_dir)
-            yield f"data: PDF 저장 완료\n\n"
+            doc = fitz.open(str(file_path))
+        except Exception as e:
+            logs.append(f"PDF 열기 실패: {e}")
+            return JSONResponse({"success": False, "logs": logs, "detail": str(e)}, status_code=400)
 
-            try:
-                doc = fitz.open(str(file_path))
-            except Exception as e:
-                yield f"data: PDF를 열 수 없습니다. ({e})\n\n"
-                return
+        async with async_session() as session:
+            for i, page in enumerate(doc):
+                text = page.get_text()
+                if not text.strip():
+                    continue
 
-            async with async_session() as session:
-                for i, page in enumerate(doc):
-                    text = page.get_text()
-                    if not text.strip():
+                try:
+                    result = await session.execute(
+                        insert(documents).values(
+                            pdf_name=file.filename,
+                            page_number=i,
+                            content=text
+                        ).returning(documents.c.id)
+                    )
+                    doc_id = result.scalar()
+                    if not doc_id:
+                        logs.append(f"문서 ID 생성 실패: {file.filename} p{i+1}")
                         continue
+                except Exception as e:
+                    logs.append(f"문서 저장 실패: {e}")
+                    continue
 
+                paragraphs = split_text_to_paragraphs(text)
+                batch = []
+                for j, para in enumerate(paragraphs):
                     try:
-                        result = await session.execute(
-                            insert(documents).values(
-                                pdf_name=file.filename,
-                                page_number=i,
-                                content=text
-                            ).returning(documents.c.id)
-                        )
-                        doc_id = result.scalar()
-                        if not doc_id:
-                            continue
+                        embedding = get_embedding(para)
+                        batch.append({
+                            "document_id": doc_id,
+                            "embedding": embedding.tobytes()
+                        })
                     except Exception as e:
-                        yield f"data: 문서 저장 실패: {e}\n\n"
+                        logs.append(f"임베딩 실패 (p{i+1} 문단{j+1}): {e}")
                         continue
 
-                    paragraphs = split_text_to_paragraphs(text)
-                    batch = []
-                    for j, para in enumerate(paragraphs):
-                        try:
-                            embedding = get_embedding(para)
-                            batch.append({
-                                "document_id": doc_id,
-                                "embedding": embedding.tobytes()
-                            })
-                        except Exception as e:
-                            yield f"data: 임베딩 실패 (p{i+1} 문단{j+1}): {e}\n\n"
-                            continue
-
-                        if len(batch) >= BATCH_SIZE:
-                            try:
-                                await session.execute(insert(embeddings), batch)
-                                await session.commit()
-                                batch = []
-                            except Exception as e:
-                                await session.rollback()
-                                yield f"data: 벡터 저장 실패: {e}\n\n"
-
-                        yield f"data: {i+1}페이지/{len(doc)} 중 {j+1}문단 처리 완료\n\n"
-
-                    if batch:
+                    if len(batch) >= BATCH_SIZE:
                         try:
                             await session.execute(insert(embeddings), batch)
                             await session.commit()
+                            batch = []
                         except Exception as e:
                             await session.rollback()
-                            yield f"data: 마지막 벡터 저장 실패: {e}\n\n"
+                            logs.append(f"벡터 저장 실패: {e}")
 
-                yield f"data: 모든 페이지 처리 완료\n\n"
-                yield "data: \n\n[DONE]\n\n"
+                if batch:
+                    try:
+                        await session.execute(insert(embeddings), batch)
+                        await session.commit()
+                    except Exception as e:
+                        await session.rollback()
+                        logs.append(f"마지막 벡터 저장 실패: {e}")
 
-        except Exception as e:
-            print(traceback.format_exc())
-            yield f"data: 오류 발생: {str(e)}\n\n"
+            logs.append("모든 페이지 처리 완료")
+            return JSONResponse({
+                "success": True,
+                "page_count": len(doc),
+                "vector_count": len(logs),  # 실제 벡터 개수로 바꾸려면 별도 카운팅 필요
+                "logs": logs
+            })
 
-        finally:
-            if file_path and os.path.exists(file_path):
-                os.remove(file_path)
+    except Exception as e:
+        logs.append(f"전체 처리 오류: {e}")
+        print(traceback.format_exc())
+        return JSONResponse({"success": False, "logs": logs, "detail": str(e)}, status_code=500)
+
+    finally:
+        if file_path and os.path.exists(file_path):
+            os.remove(file_path)
 
     # SSE vs JSON 판단
     if request and request.headers.get("accept") == "text/event-stream":
