@@ -60,11 +60,14 @@ async def chat_stream(request: Request):
                         yield f"data: {content}\n\n"
                         await asyncio.sleep(0)
 
+            # 스트림 종료 신호를 먼저 보냄
+            yield "data: [DONE]\n\n"
+
+            # 그 다음에 DB에 저장
             async with async_session() as session:
                 chat = ChatHistory(user_message=message, bot_response=full_response)
                 session.add(chat)
                 await session.commit()
-            yield "data: [DONE]\n\n"
         except Exception as e:
             import traceback
             print("DB 저장 중 오류:", e)
