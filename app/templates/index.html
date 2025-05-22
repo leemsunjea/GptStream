@@ -396,14 +396,7 @@
 
                 const logMsg = line.slice(5).trim(); // "data:" 이후 내용
                 if (logMsg && logMsg !== "[DONE]") {
-                  clearInterval(processingInterval);
-                  const logBody = document.getElementById("system-log-body");
-                  const lastMsg = logBody.lastElementChild;
-                  if (lastMsg) {
-                    lastMsg.textContent = logMsg;
-                  } else {
-                    appendSystemLog(logMsg);
-                  }
+                  appendSystemLog(logMsg); // 로그 메시지 출력
                 }
               }
             }
@@ -474,3 +467,4 @@
 </body>
 
 </html>
+``` 
