@@ -373,7 +373,6 @@
 
           if (response.ok) {
             appendMessage("bot", `PDF가 성공적으로 업로드되어 인덱싱되었습니다. (저장된 페이지 수: ${result.page_count}, 벡터 수: ${result.vector_count})`);
-            // logs 배열이 있으면 모두 시스템 로그로 출력
             if (result.logs && Array.isArray(result.logs)) {
               result.logs.forEach(msg => appendSystemLog(msg));
             }

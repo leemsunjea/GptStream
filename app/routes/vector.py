@@ -27,6 +27,8 @@ def split_text_to_paragraphs(text):
 upload_dir = Path("/tmp/temp_uploads")
 upload_dir.mkdir(parents=True, exist_ok=True)
 
+BATCH_SIZE = 10  # 한 번에 처리할 문단 수
+
 @router.post("/upload_pdf")
 async def upload_pdf(file: UploadFile = File(...)):
     logs = []
@@ -59,17 +61,25 @@ async def upload_pdf(file: UploadFile = File(...)):
                     doc_id = result.scalar()
                     # 문단 단위로 분할
                     paragraphs = split_text_to_paragraphs(text)
+                    batch = []
                     for j, para in enumerate(paragraphs):
                         if para.strip():
                             embedding = get_embedding(para)
-                            await session.execute(
-                                insert(embeddings).values(
-                                    document_id=doc_id,
-                                    embedding=embedding.tobytes()
-                                )
-                            )
+                            batch.append({
+                                "document_id": doc_id,
+                                "embedding": embedding.tobytes()
+                            })
                             vector_count += 1
                             logs.append(f"{i+1}페이지/{len(doc)} 중 {j+1}문단/{len(paragraphs)} 처리 완료")
+                        # BATCH_SIZE마다 DB에 저장
+                        if len(batch) >= BATCH_SIZE:
+                            await session.execute(insert(embeddings), batch)
+                            await session.commit()
+                            batch = []
+                    # 남은 것 저장
+                    if batch:
+                        await session.execute(insert(embeddings), batch)
+                        await session.commit()
                     page_count += 1
             await session.commit()
         logs.append("PDF가 DB에 저장됨.")
