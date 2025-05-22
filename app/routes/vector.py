@@ -23,21 +23,26 @@ def get_embedding(text: str):
 
 @router.post("/upload_pdf")
 async def upload_pdf(file: UploadFile = File(...)):
-    contents = await file.read()
-    file_path = f"temp_{file.filename}"
-    with open(file_path, "wb") as f:
-        f.write(contents)
+    try:
+        contents = await file.read()
+        file_path = f"temp_{file.filename}"
+        with open(file_path, "wb") as f:
+            f.write(contents)
 
-    doc = fitz.open(file_path)
-    for page in doc:
-        text = page.get_text()
-        if text.strip():
-            embedding = get_embedding(text)
-            index.add(np.array([embedding]))
-            doc_store.append(text)
+        doc = fitz.open(file_path)
+        for page in doc:
+            text = page.get_text()
+            if text.strip():
+                embedding = get_embedding(text)
+                index.add(np.array([embedding]))
+                doc_store.append(text)
 
-    os.remove(file_path)
-    return {"status": "uploaded and indexed"}
+        os.remove(file_path)
+        return {"status": "uploaded and indexed"}
+    except Exception as e:
+        import traceback
+        print(traceback.format_exc())
+        return {"error": str(e)}
 
 @router.get("/search")
 def search(q: str):
