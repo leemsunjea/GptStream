@@ -33,7 +33,8 @@ async def chat_stream(request: Request):
     # system 프롬프트 생성
     if context_text:
         system_prompt = (
-            "다음은 사용자가 업로드한 문서의 일부입니다. 해당 내용을 바탕으로 정확하고 친절하게 답변해주세요:\n\n" + context_text
+            "다음은 사용자가 업로드한 문서의 일부입니다. 해당 내용을 바탕으로 정확하고 친절하게 답변해주세요:\n\n" + context_text,
+            "또한 사용자에게 문서의 어떤 부분을 참고했는지를 알려주세요.\n\n"
         )
     else:
         system_prompt = "업로드된 문서가 없으니 일반 챗봇처럼 답변해주세요."
