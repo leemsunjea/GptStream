@@ -204,27 +204,79 @@
 
   <script>
     document.addEventListener("DOMContentLoaded", function () {
-
-      const button = document.getElementById("some-button");
-      if (button) {
-        button.addEventListener("click", function () {
-          // 실행 코드
-        });
-      } else {
-        console.error("❗ 'some-button' ID를 가진 요소를 찾을 수 없습니다.");
-      }
-      console.log(document.getElementById("some-button")); // null인지 확인
-
+      const API_BASE = window.location.origin;
+      const input = document.getElementById("chat-input-field");
+      const chatBox = document.getElementById("chat-body");
+      const sendButton = document.getElementById("sendButton");
       const uploadButton = document.getElementById("uploadPdfBtn");
       const fileInput = document.getElementById("pdfInput");
+      let lastBotDiv = null;
+      let partial = "";
 
-      uploadButton.addEventListener("click", async () => {
+      // 메시지 추가 함수
+      function appendMessage(role, message) {
+        const msg = document.createElement("div");
+        msg.classList.add("message", role);
+        msg.textContent = message;
+        chatBox.appendChild(msg);
+        chatBox.scrollTop = chatBox.scrollHeight;
+      }
+
+      // 챗봇 메시지 전송 함수
+      async function sendMessage() {
+        const message = input.value.trim();
+        if (!message) return;
+
+        appendMessage("user", message);
+        input.value = "";
+        sendButton.style.display = "none";
+        partial = "";
+        lastBotDiv = null;
+
+        try {
+          const response = await fetch(`${API_BASE}/chat/stream`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ message: message })
+          });
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder();
+
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            const text = decoder.decode(value, { stream: true });
+            const lines = text.split("\n");
+            for (let line of lines) {
+              if (line.startsWith("data: ")) {
+                const content = line.slice(6);
+                if (content === "[DONE]") return;
+                partial += content;
+                if (!lastBotDiv) {
+                  lastBotDiv = document.createElement("div");
+                  lastBotDiv.classList.add("message", "bot");
+                  chatBox.appendChild(lastBotDiv);
+                }
+                lastBotDiv.textContent = partial;
+                chatBox.scrollTop = chatBox.scrollHeight;
+              }
+            }
+          }
+        } catch (err) {
+          console.error("전송 오류:", err);
+          appendMessage("bot", "오류가 발생했습니다. 다시 시도해주세요.");
+        } finally {
+          sendButton.style.display = "";
+        }
+      }
+
+      // PDF 업로드 함수
+      async function uploadPdf() {
         const file = fileInput.files[0];
         if (!file) {
           alert("PDF 파일을 선택해주세요.");
           return;
         }
-
         const formData = new FormData();
         formData.append("file", file);
 
@@ -233,9 +285,7 @@
             method: "POST",
             body: formData
           });
-
           const result = await response.json();
-
           if (response.ok) {
             appendMessage("bot", "PDF가 성공적으로 업로드되어 인덱싱되었습니다.");
           } else {
@@ -245,77 +295,9 @@
           console.error("업로드 오류:", error);
           appendMessage("bot", "PDF 업로드 중 오류가 발생했습니다.");
         }
-      });
-
-
-
-
-
-      const API_BASE = window.location.origin;
-      const input = document.getElementById("chat-input-field");
-      const chatBox = document.getElementById("chat-body");
-      const sendButton = document.getElementById("sendButton");
-      let lastBotDiv = null;
-      let partial = "";
-
-      function sendMessage() {
-        const message = input.value.trim();
-        if (!message) return;
-
-        appendMessage("user", message);
-        input.value = "";
-        sendButton.style.display = "none";
-
-        partial = "";
-        lastBotDiv = null;
-
-        fetch(`${API_BASE}/chat/stream`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message: message })
-        }).then(response => {
-          const reader = response.body.getReader();
-          const decoder = new TextDecoder();
-
-          async function readStream() {
-            while (true) {
-              const { done, value } = await reader.read();
-              if (done) break;
-              const text = decoder.decode(value, { stream: true });
-              const lines = text.split("\n");
-
-              for (let line of lines) {
-                if (line.startsWith("data: ")) {
-                  const content = line.slice(6);
-                  if (content === "[DONE]") return;
-                  partial += content;
-                  if (!lastBotDiv) {
-                    lastBotDiv = document.createElement("div");
-                    lastBotDiv.classList.add("message", "bot");
-                    chatBox.appendChild(lastBotDiv);
-                  }
-                  lastBotDiv.textContent = partial;
-                  chatBox.scrollTop = chatBox.scrollHeight;
-                }
-              }
-            }
-          }
-
-          readStream();
-        }).catch(err => {
-          console.error("전송 오류:", err);
-          appendMessage("bot", "오류가 발생했습니다. 다시 시도해주세요.");
-        });
       }
 
-      function appendMessage(role, message) {
-        const msg = document.createElement("div");
-        msg.classList.add("message", role);
-        msg.textContent = message;
-        chatBox.appendChild(msg);
-        chatBox.scrollTop = chatBox.scrollHeight;
-      }
-
+      // 이벤트 바인딩
       sendButton.addEventListener("click", sendMessage);
       input.addEventListener("keypress", function (e) {
         if (e.key === "Enter" && !e.shiftKey) {
@@ -323,6 +305,7 @@
           sendMessage();
         }
       });
+      uploadButton.addEventListener("click", uploadPdf);
     });
   </script>
 </body>
