@@ -20,8 +20,8 @@ app.include_router(router)
 async def on_startup():
     async with async_session() as session:
         async with session.begin():
+            await session.execute(embeddings.delete())            
             await session.execute(documents.delete())
-            await session.execute(embeddings.delete())
     print("✅ DB 초기화 완료")
 
 # DB 의존성
