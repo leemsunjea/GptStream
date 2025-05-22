@@ -15,9 +15,24 @@ from app.vector_db import get_embedding  # 중복 제거: vector_db에서 임포
 router = APIRouter()
 
 def safe_filename(name):
+    # 기존 safe_filename 함수 활용
     name = unicodedata.normalize("NFC", name)
     name = re.sub(r"[^\w.\-]", "_", name)
     return name
+
+async def save_upload_file(file: UploadFile, upload_dir: Path):
+    filename = safe_filename(file.filename)
+    file_path = upload_dir / f"temp_{filename}"
+
+    with open(file_path, "wb") as out_file:
+        while True:
+            chunk = await file.read(1024 * 1024)  # 1MB 단위
+            if not chunk:
+                break
+            out_file.write(chunk)
+
+    await file.close()
+    return file_path
 
 def split_text_to_paragraphs(text):
     # 빈 줄(2개 이상의 개행) 또는 한 줄 개행 기준으로 문단 분리
@@ -35,15 +50,7 @@ async def upload_pdf(file: UploadFile = File(...)):
         logs = []
         try:
             # 1. PDF 파일 저장
-            filename = safe_filename(file.filename)
-            file_path = upload_dir / f"temp_{filename}"
-
-            # 파일 저장
-            with open(file_path, "wb") as f:
-                f.write(await file.read())
-            # 여기서 f는 더 이상 사용하지 마세요!
-
-            # 이후 file_path를 사용해 fitz.open(str(file_path)) 등으로 새로 엽니다.
+            file_path = await save_upload_file(file, upload_dir)
             logs.append("PDF 파일이 서버에 저장됨.")
 
             # 2. DB에 PDF 원문 저장 및 문단 단위 임베딩
@@ -58,7 +65,7 @@ async def upload_pdf(file: UploadFile = File(...)):
                         # 문서 저장
                         result = await session.execute(
                             insert(documents).values(
-                                pdf_name=filename,
+                                pdf_name=file.filename,
                                 page_number=i,
                                 content=text
                             ).returning(documents.c.id)
