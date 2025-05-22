@@ -6,6 +6,7 @@ from db.database import async_session
 from app.routes import home, chat
 from app.routes import vector  # 추가
 from app.vector_db import load_faiss_and_docstore
+from fastapi import FastAPI, HTTPException
 
 app = FastAPI()
 
@@ -19,10 +20,12 @@ async def test(db: AsyncSession = Depends(get_db)):
     result = await db.execute("SELECT 1")
     return {"db_connection": result.scalar()}
 
-@app.on_event("startup")
-async def startup_event():
-    global index, doc_store
-    index, doc_store = await load_faiss_and_docstore()
+@app.exception_handler(504)
+async def gateway_timeout_handler(request, exc):
+  return JSONResponse(
+    status_code=504,
+    content={"success": False, "logs": ["서버 타임아웃 발생"], "detail": "Gateway Timeout"}
+  )
 
 # 기존 라우터 등록
 app.include_router(home.router)

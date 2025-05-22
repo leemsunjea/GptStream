@@ -4,13 +4,10 @@
 <head>
   <meta charset="UTF-8">
   <title>스트리밍 챗봇</title>
-  <!-- <link rel="stylesheet" href="/static/style.css"> -->
-
   <style>
     /* 채팅 버튼 및 팝업창 관련 스타일 */
     #chat-popup {
       position: static;
-      /* fixed 해제 */
       margin: 0;
       width: 430px;
       height: 705px;
@@ -27,10 +24,8 @@
       opacity: 1;
       transform: translateY(0);
       pointer-events: auto;
-      /* 챗봇이 활성화되었을 때만 클릭 가능 */
     }
 
-    /* 챗봇 버튼 스타일 */
     #chat-button {
       position: fixed;
       bottom: 20px;
@@ -55,7 +50,6 @@
       border-radius: 50%;
     }
 
-    /* 헤더 영역 */
     #chat-header {
       background-color: transparent;
       padding: 20px;
@@ -74,17 +68,14 @@
       color: #666;
     }
 
-    /* 대화 영역 */
     #chat-body {
       padding: 10px;
       height: calc(95% - 190px);
-      /* 기존 140px → 190px로 수정 */
       overflow-y: auto;
       display: flex;
       flex-direction: column;
     }
 
-    /* 메시지 스타일 */
     .message {
       padding: 10px;
       margin: 5px;
@@ -103,7 +94,6 @@
       align-self: flex-end;
     }
 
-    /* 입력창 영역 */
     #chat-input {
       padding: 10px;
       border-top: 1px solid #ddd;
@@ -126,7 +116,6 @@
       padding: 10px;
     }
 
-    /* 보내기 버튼 스타일 */
     .send-icon {
       cursor: pointer;
       background: none;
@@ -163,10 +152,8 @@
       background-color: #0056b3;
     }
 
-    /* 시스템 로그 팝업창: 오른쪽에 위치 */
     #system-log-popup {
       position: static;
-      /* fixed 해제 */
       margin: 0;
       width: 430px;
       height: 705px;
@@ -184,20 +171,15 @@
       padding: 10px;
       height: calc(100% - 80px);
       overflow-y: auto;
-      /* 세로 스크롤 자동 */
       overflow-x: hidden;
-      /* 가로 스크롤 숨김 */
       display: flex;
       flex-direction: column;
       font-size: 15px;
       color: #333;
-      /* 스크롤바 항상 오른쪽에 표시 */
       scrollbar-width: thin;
-      /* Firefox */
       scrollbar-color: #bbb #f3f3f3;
     }
 
-    /* 크롬, 엣지, 사파리용 스크롤바 스타일 */
     #system-log-body::-webkit-scrollbar {
       width: 8px;
       background: #f3f3f3;
@@ -209,7 +191,6 @@
       border-radius: 8px;
     }
 
-    /* 시스템 로그 메시지 스타일 */
     .system-log-message {
       padding: 10px;
       margin: 5px;
@@ -227,20 +208,12 @@
       align-items: center;
       justify-content: center;
       gap: 60px;
-      /* 두 창 사이 간격 */
       background: #f8f9fa;
     }
   </style>
 </head>
 
 <body>
-  <!-- 채팅 버튼 -->
-  <!-- <div id="chat-button">
-    <img src="https://encrypted-tbn3.gstatic.com/images?q=tbn:ANd9GcQNXaujUJBXZrKXOPikVUxrdGgab_04TmHuuKiEyZRhkWLvpStV"
-      alt="Chat Button">
-  </div> -->
-
-  <!-- 채팅 팝업창 -->
   <div id="chat-popup">
     <div id="chat-header">
       <div id="chat-svg">
@@ -253,7 +226,6 @@
     <div id="chat-body">
       <div class="message bot">안녕하세요! 무엇을 도와드릴까요?</div>
     </div>
-    <!-- PDF 업로드 영역 -->
     <div id="pdf-upload" style="padding: 10px; border-top: 1px solid #ddd;">
       <input type="file" id="pdfInput" accept="application/pdf" style="display: none;" />
       <button id="uploadPdfBtn">PDF 업로드</button>
@@ -266,7 +238,6 @@
     </div>
   </div>
 
-  <!-- 시스템 로그 팝업창 (채팅창과 동일한 UI, 오른쪽에 위치) -->
   <div id="system-log-popup">
     <div id="chat-header">
       <div id="chat-svg">
@@ -299,11 +270,17 @@
         msg.textContent = message;
         chatBox.appendChild(msg);
         chatBox.scrollTop = chatBox.scrollHeight;
+        return msg;
       }
 
-      // 시스템 로그 출력 함수-------------------------------------
+      // 시스템 로그 출력 함수
       function appendSystemLog(message) {
+        console.log("appendSystemLog 호출:", message);
         const logBody = document.getElementById("system-log-body");
+        if (!logBody) {
+          console.error("system-log-body를 찾을 수 없습니다.");
+          return;
+        }
         const msg = document.createElement("div");
         msg.classList.add("system-log-message");
         msg.textContent = message;
@@ -339,7 +316,6 @@
             for (let line of lines) {
               if (line.startsWith("data: ")) {
                 let content = line.slice(6);
-                // '\n'를 <br>로 변환
                 content = content.replace(/\n/g, "<br>");
                 partial += content;
                 if (!lastBotDiv) {
@@ -347,7 +323,7 @@
                   lastBotDiv.classList.add("message", "bot");
                   chatBox.appendChild(lastBotDiv);
                 }
-                lastBotDiv.innerHTML = partial; // textContent → innerHTML로 변경!
+                lastBotDiv.innerHTML = partial;
                 chatBox.scrollTop = chatBox.scrollHeight;
               }
             }
@@ -355,17 +331,18 @@
         } catch (err) {
           console.error("전송 오류:", err);
           appendMessage("bot", "오류가 발생했습니다. 다시 시도해주세요.");
+          appendSystemLog(`메시지 전송 오류: ${err.message}`);
         } finally {
           sendButton.style.display = "";
         }
       }
-      let processingInterval = null; // 전역에서 관리 필요
 
-      // PDF 업로드 함수
+      // PDF 업로드 함수 (JSON 파싱 오류 처리 추가)
       async function uploadPdf() {
         const file = fileInput.files[0];
         if (!file) {
-          alert("PDF 파일을 선택해주세요.");
+          appendMessage("bot", "PDF 파일을 선택해주세요.");
+          appendSystemLog("PDF 파일이 선택되지 않았습니다.");
           return;
         }
 
@@ -378,29 +355,56 @@
             body: formData
           });
 
-          const result = await response.json();
+          // 응답 상태 확인
+          if (!response.ok) {
+            const text = await response.text();
+            console.error(`서버 응답 오류: ${response.status} ${response.statusText}`, text);
+            appendMessage("bot", `PDF 업로드 실패: 서버 오류 (${response.status})`);
+            appendSystemLog(`서버 오류: ${response.status} ${response.statusText}`);
+            return;
+          }
 
-          if (response.ok && result.success) {
+          // 콘텐츠 타입 확인
+          const contentType = response.headers.get("content-type");
+          if (!contentType || !contentType.includes("application/json")) {
+            const text = await response.text();
+            console.error("비-JSON 응답:", text);
+            appendMessage("bot", "PDF 업로드 실패: 서버에서 잘못된 응답 형식을 반환했습니다.");
+            appendSystemLog("서버에서 JSON이 아닌 응답을 반환했습니다.");
+            return;
+          }
+
+          // JSON 파싱
+          const result = await response.json();
+          console.log("서버 응답:", result);
+
+          if (result.success) {
             appendMessage("bot", `PDF 업로드 완료. (저장된 페이지 수: ${result.page_count})`);
             if (result.logs && Array.isArray(result.logs)) {
+              console.log("로그 출력:", result.logs);
               result.logs.forEach(msg => appendSystemLog(msg));
+            } else {
+              appendSystemLog("서버에서 로그 데이터가 제공되지 않았습니다.");
             }
           } else {
             appendMessage("bot", `PDF 업로드 실패: ${result.detail || "서버 오류"}`);
             if (result.logs && Array.isArray(result.logs)) {
+              console.log("로그 출력:", result.logs);
               result.logs.forEach(msg => appendSystemLog(msg));
+            } else {
+              appendSystemLog(`업로드 실패: ${result.detail || "서버 오류"}`);
             }
           }
         } catch (error) {
           console.error("업로드 오류:", error);
           appendMessage("bot", "PDF 업로드 중 오류가 발생했습니다.");
-          appendSystemLog("PDF 업로드 중 오류가 발생했습니다.");
+          appendSystemLog(`PDF 업로드 중 오류: ${error.message}`);
         }
       }
 
       // PDF 업로드 버튼 클릭 시 파일 선택창 열기
       uploadButton.addEventListener("click", function () {
-        fileInput.value = ""; // 같은 파일 연속 선택 시에도 이벤트 발생하도록 초기화
+        fileInput.value = "";
         fileInput.click();
       });
 
