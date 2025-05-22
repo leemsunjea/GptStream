@@ -8,7 +8,7 @@ import numpy as np
 from app.config import settings
 from db.models import ChatHistory
 from db.database import async_session
-from app.vector_db import get_embedding, index, doc_store  # vector 연동
+from app.vector_db import get_embedding_async as get_embedding, index, doc_store  # vector 연동
 from openai import OpenAI
 
 router = APIRouter()
@@ -25,7 +25,7 @@ async def chat_stream(request: Request):
     context_text = ""
     referenced_docs = []
     if index.ntotal > 0:
-        query_embedding = get_embedding(message)
+        query_embedding = await get_embedding(message)
         D, I = index.search(np.array([query_embedding]), k=3)
         if I is not None and len(I[0]) > 0:
             referenced_docs = [doc_store[i] for i in I[0] if i >= 0 and i < len(doc_store)]
