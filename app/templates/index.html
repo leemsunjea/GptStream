@@ -329,13 +329,6 @@
                 }
                 lastBotDiv.textContent = partial;
                 chatBox.scrollTop = chatBox.scrollHeight;
-
-                // 챗봇 응답 스트림 처리
-                if (isChatStream) {
-                  appendMessage("bot", content); // 채팅창에만 출력
-                } else if (isSystemLog) {
-                  appendSystemLog(logMsg); // 시스템 로그창에만 출력
-                }
               }
             }
           }
