@@ -41,6 +41,7 @@ async def upload_pdf(file: UploadFile = File(...)):
 
         # 2. DB에 PDF 원문 저장 및 문단 단위 임베딩
         doc = fitz.open(str(file_path))
+        total_pages = len(doc)
         page_count = 0
         vector_count = 0
         async with async_session() as session:
@@ -58,7 +59,7 @@ async def upload_pdf(file: UploadFile = File(...)):
                     doc_id = result.scalar()
                     # 문단 단위로 분할
                     paragraphs = split_text_to_paragraphs(text)
-                    for para in paragraphs:
+                    for j, para in enumerate(paragraphs):
                         if para.strip():
                             embedding = get_embedding(para)
                             await session.execute(
@@ -68,6 +69,7 @@ async def upload_pdf(file: UploadFile = File(...)):
                                 )
                             )
                             vector_count += 1
+                            logs.append(f"{i+1}페이지/{len(doc)} 중 {j+1}문단/{len(paragraphs)} 처리 완료")
                     page_count += 1
             await session.commit()
         logs.append("PDF가 DB에 저장됨.")

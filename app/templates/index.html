@@ -348,12 +348,29 @@
         const formData = new FormData();
         formData.append("file", file);
 
+        // 처리중 애니메이션 로그
+        let processing = true;
+        let dotCount = 1;
+        appendSystemLog("PDF 파일 처리중.");
+        const processingInterval = setInterval(() => {
+          if (!processing) return;
+          dotCount = dotCount % 3 + 1;
+          let dots = ".".repeat(dotCount);
+          // 마지막 로그 div만 점으로 갱신
+          const logBody = document.getElementById("system-log-body");
+          const lastMsg = logBody.lastElementChild;
+          if (lastMsg) lastMsg.textContent = `PDF 파일 처리중${dots}`;
+        }, 500);
+
         try {
           const response = await fetch(`${API_BASE}/upload_pdf`, {
             method: "POST",
             body: formData
           });
           const result = await response.json();
+          processing = false;
+          clearInterval(processingInterval);
+
           if (response.ok) {
             appendMessage("bot", `PDF가 성공적으로 업로드되어 인덱싱되었습니다. (저장된 페이지 수: ${result.page_count}, 벡터 수: ${result.vector_count})`);
             // logs 배열이 있으면 모두 시스템 로그로 출력
@@ -369,6 +386,8 @@
             }
           }
         } catch (error) {
+          processing = false;
+          clearInterval(processingInterval);
           console.error("업로드 오류:", error);
           appendMessage("bot", "PDF 업로드 중 오류가 발생했습니다.");
           appendSystemLog("PDF 업로드 중 오류가 발생했습니다.");
