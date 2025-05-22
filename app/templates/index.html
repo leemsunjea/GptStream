@@ -355,7 +355,6 @@
           if (!processing) return;
           dotCount = dotCount % 3 + 1;
           let dots = ".".repeat(dotCount);
-          // 마지막 로그 div만 점으로 갱신
           const logBody = document.getElementById("system-log-body");
           const lastMsg = logBody.lastElementChild;
           if (lastMsg) lastMsg.textContent = `PDF 파일 처리중${dots}`;
@@ -369,7 +368,6 @@
           if (response.body && response.headers.get("content-type")?.includes("text/event-stream")) {
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
-            let partial = "";
             while (true) {
               const { done, value } = await reader.read();
               if (done) break;
@@ -379,7 +377,16 @@
                 if (line.startsWith("data: ")) {
                   const logMsg = line.slice(6);
                   if (logMsg && logMsg !== "[DONE]") {
-                    appendSystemLog(logMsg);
+                    // 실시간 진행 로그가 오면 애니메이션 멈추고, 마지막 로그를 새 메시지로 교체
+                    processing = false;
+                    clearInterval(processingInterval);
+                    const logBody = document.getElementById("system-log-body");
+                    const lastMsg = logBody.lastElementChild;
+                    if (lastMsg) {
+                      lastMsg.textContent = logMsg;
+                    } else {
+                      appendSystemLog(logMsg);
+                    }
                   }
                 }
               }
