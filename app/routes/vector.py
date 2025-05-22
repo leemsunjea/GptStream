@@ -55,10 +55,14 @@ async def process_pdf(task_id: str, file_path: str, filename: str, session, logs
                 embeddings = await asyncio.gather(*tasks, return_exceptions=True)
                 batch = []
                 for j, emb in enumerate(embeddings):
+                    if isinstance(emb, Exception):
+                        logs.append(f"임베딩 오류: {emb}")
+                        continue
                     if isinstance(emb, np.ndarray):
                         batch.append({"document_id": doc_id, "embedding": emb.tobytes()})
                 if batch:
-                    await session.execute(insert(embeddings), batch)
+                    stmt = insert(embeddings)  # 먼저 "이 테이블에 넣을거야" 라고 알려주고
+                    await session.execute(stmt, batch)  # 그런 다음 데이터를 넣자!
                     await session.commit()
                     logs.append(f"페이지 {i+1}: {len(batch)} 문단 임베딩 저장")
         logs.append("모든 페이지 처리 완료")
