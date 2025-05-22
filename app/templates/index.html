@@ -288,6 +288,8 @@
           const result = await response.json();
           if (response.ok) {
             appendMessage("bot", "PDF가 성공적으로 업로드되어 인덱싱되었습니다.");
+            print("저장된 페이지 수:", len(doc_store))
+            print("faiss index 벡터 수:", index.ntotal)
           } else {
             appendMessage("bot", `업로드 실패: ${result.detail || "서버 오류"}`);
           }
