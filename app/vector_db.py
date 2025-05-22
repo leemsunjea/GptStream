@@ -1,4 +1,3 @@
-# app/vector_db.py
 import os
 import faiss
 import numpy as np
@@ -8,6 +7,7 @@ from sqlalchemy import select
 from db.models import documents, embeddings
 from app.config import settings
 from openai import OpenAI
+from typing import Optional
 
 load_dotenv()
 client = OpenAI(api_key=settings.OPENAI_API_KEY)
@@ -29,9 +29,13 @@ async def load_faiss_and_docstore():
         index.add(np.stack(embeddings_list))
     return index, doc_store
 
-def get_embedding(text: str):
-    response = client.embeddings.create(
-        input=text,
-        model="text-embedding-ada-002"
-    )
-    return np.array(response.data[0].embedding, dtype='float32')
+def get_embedding(text: str) -> Optional[np.ndarray]:
+    try:
+        response = client.embeddings.create(
+            input=text,
+            model="text-embedding-ada-002"
+        )
+        return np.array(response.data[0].embedding, dtype='float32')
+    except Exception as e:
+        print(f"[임베딩 오류] {e}")
+        return None

@@ -1,68 +1,64 @@
 import unicodedata
 import re
-from pathlib import Path
-from fastapi import APIRouter, UploadFile, File
-from fastapi.responses import JSONResponse, StreamingResponse
 import os
 import fitz  # PyMuPDF
+import traceback
+from pathlib import Path
+from fastapi import APIRouter, UploadFile, File, Request
+from fastapi.responses import StreamingResponse, JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import insert
-from db.database import async_session, get_async_engine
+from db.database import async_session
 from db.models import documents, embeddings
+from app.vector_db import get_embedding  # 임베딩 함수
 from app.config import settings
-from app.vector_db import get_embedding  # 중복 제거: vector_db에서 임포트
 
 router = APIRouter()
-
-def safe_filename(name):
-    # 기존 safe_filename 함수 활용
-    name = unicodedata.normalize("NFC", name)
-    name = re.sub(r"[^\w.\-]", "_", name)
-    return name
-
-async def save_upload_file(file: UploadFile, upload_dir: Path):
-    filename = safe_filename(file.filename)
-    file_path = upload_dir / f"temp_{filename}"
-
-    with open(file_path, "wb") as out_file:
-        while True:
-            chunk = await file.read(1024 * 1024)  # 1MB 단위
-            if not chunk:
-                break
-            out_file.write(chunk)
-
-    await file.close()
-    return file_path
-
-def split_text_to_paragraphs(text):
-    # 빈 줄(2개 이상의 개행) 또는 한 줄 개행 기준으로 문단 분리
-    paragraphs = [p.strip() for p in re.split(r'\n{2,}|\r{2,}|\n|\r', text) if p.strip()]
-    return paragraphs
 
 upload_dir = Path("/tmp/temp_uploads")
 upload_dir.mkdir(parents=True, exist_ok=True)
 
-BATCH_SIZE = 10  # 한 번에 처리할 문단 수
+BATCH_SIZE = 10
+
+def safe_filename(name):
+    name = unicodedata.normalize("NFC", name)
+    return re.sub(r"[^\w.\-]", "_", name)
+
+async def save_upload_file(file: UploadFile, upload_dir: Path) -> Path:
+    filename = safe_filename(file.filename)
+    file_path = upload_dir / f"temp_{filename}"
+    with open(file_path, "wb") as out_file:
+        while chunk := await file.read(1024 * 1024):
+            out_file.write(chunk)
+    await file.close()
+    return file_path
+
+def split_text_to_paragraphs(text: str):
+    return [p.strip() for p in re.split(r'\n{2,}|\r{2,}|\n|\r', text) if p.strip()]
 
 @router.post("/upload_pdf")
-async def upload_pdf(file: UploadFile = File(...)):
+async def upload_pdf(file: UploadFile = File(...), request: Request = None):
     async def event_stream():
         logs = []
+        file_path = None
         try:
-            # 1. PDF 파일 저장
             file_path = await save_upload_file(file, upload_dir)
-            logs.append("PDF 파일이 서버에 저장됨.")
+            logs.append("PDF 저장 완료")
 
-            # 2. DB에 PDF 원문 저장 및 문단 단위 임베딩
-            doc = fitz.open(str(file_path))
-            total_pages = len(doc)
-            page_count = 0
-            vector_count = 0
+            try:
+                doc = fitz.open(str(file_path))
+            except Exception as e:
+                logs.append(f"PDF 열기 실패: {e}")
+                yield f"data: PDF를 열 수 없습니다. ({e})\n\n"
+                return
+
             async with async_session() as session:
                 for i, page in enumerate(doc):
                     text = page.get_text()
-                    if text.strip():
-                        # 문서 저장
+                    if not text.strip():
+                        continue
+
+                    try:
                         result = await session.execute(
                             insert(documents).values(
                                 pdf_name=file.filename,
@@ -71,42 +67,59 @@ async def upload_pdf(file: UploadFile = File(...)):
                             ).returning(documents.c.id)
                         )
                         doc_id = result.scalar()
-                        # 문단 단위로 분할
-                        paragraphs = split_text_to_paragraphs(text)
-                        batch = []
-                        for j, para in enumerate(paragraphs):
-                            if para.strip():
-                                embedding = get_embedding(para)
-                                batch.append({
-                                    "document_id": doc_id,
-                                    "embedding": embedding.tobytes()
-                                })
-                                vector_count += 1
-                                yield f"data: {i+1}페이지/{len(doc)} 중 {j+1}문단/{len(paragraphs)} 처리 완료\n\n"
-                            # BATCH_SIZE마다 DB에 저장
-                            if len(batch) >= BATCH_SIZE:
+                        if not doc_id:
+                            logs.append(f"문서 ID 생성 실패: {file.filename} p{i+1}")
+                            continue
+                    except Exception as e:
+                        logs.append(f"문서 저장 실패: {e}")
+                        continue
+
+                    paragraphs = split_text_to_paragraphs(text)
+                    batch = []
+                    for j, para in enumerate(paragraphs):
+                        try:
+                            embedding = get_embedding(para)
+                            batch.append({
+                                "document_id": doc_id,
+                                "embedding": embedding.tobytes()
+                            })
+                        except Exception as e:
+                            logs.append(f"임베딩 실패 (p{i+1} 문단{j+1}): {e}")
+                            continue
+
+                        if len(batch) >= BATCH_SIZE:
+                            try:
                                 await session.execute(insert(embeddings), batch)
                                 await session.commit()
                                 batch = []
-                        # 남은 것 저장
-                        if batch:
+                            except Exception as e:
+                                await session.rollback()
+                                logs.append(f"벡터 저장 실패: {e}")
+
+                        yield f"data: {i+1}페이지/{len(doc)} 중 {j+1}문단 처리 완료\n\n"
+
+                    if batch:
+                        try:
                             await session.execute(insert(embeddings), batch)
                             await session.commit()
-                        page_count += 1
-                await session.commit()
-            logs.append("PDF가 DB에 저장됨.")
-            logs.append("faiss 임베딩 벡터를 문단 단위로 분할하여 DB에 저장함.")
+                        except Exception as e:
+                            await session.rollback()
+                            logs.append(f"마지막 벡터 저장 실패: {e}")
 
-            os.remove(file_path)
-
-            # 4. 전체 완료
-            logs.append("전체 임베딩 및 메타데이터 DB 저장 완료.")
-            yield "data: [DONE]\n\n"
+                logs.append("모든 페이지 처리 완료")
+                yield "data: [DONE]\n\n"
 
         except Exception as e:
-            logs.append(f"오류 발생: {str(e)}")
-            import traceback
+            logs.append(f"전체 처리 오류: {e}")
             print(traceback.format_exc())
             yield f"data: 오류 발생: {str(e)}\n\n"
 
-    return StreamingResponse(event_stream(), media_type="text/event-stream")
+        finally:
+            if file_path and os.path.exists(file_path):
+                os.remove(file_path)
+
+    # SSE vs JSON 판단
+    if request and request.headers.get("accept") == "text/event-stream":
+        return StreamingResponse(event_stream(), media_type="text/event-stream")
+    else:
+        return JSONResponse({"detail": "SSE 클라이언트가 아닙니다. Accept: text/event-stream 필요"})

@@ -338,6 +338,7 @@
           sendButton.style.display = "";
         }
       }
+      let processingInterval = null; // 전역에서 관리 필요
 
       // PDF 업로드 함수
       async function uploadPdf() {
@@ -346,55 +347,56 @@
           alert("PDF 파일을 선택해주세요.");
           return;
         }
+
         const formData = new FormData();
         formData.append("file", file);
-
-        // 처리중 애니메이션 로그
-        let processing = true;
-        let dotCount = 1;
-        appendSystemLog("PDF 파일 처리중.");
-        const processingInterval = setInterval(() => {
-          if (!processing) return;
-          dotCount = dotCount % 3 + 1;
-          let dots = ".".repeat(dotCount);
-          const logBody = document.getElementById("system-log-body");
-          const lastMsg = logBody.lastElementChild;
-          if (lastMsg) lastMsg.textContent = `PDF 파일 처리중${dots}`;
-        }, 500);
 
         try {
           const response = await fetch(`${API_BASE}/upload_pdf`, {
             method: "POST",
             body: formData
           });
-          if (response.body && response.headers.get("content-type")?.includes("text/event-stream")) {
+
+          const contentType = response.headers.get("content-type") || "";
+
+          if (contentType.includes("text/event-stream")) {
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
+
             while (true) {
               const { done, value } = await reader.read();
               if (done) break;
               const text = decoder.decode(value, { stream: true });
               const lines = text.split("\n");
+
               for (let line of lines) {
-                if (line.startsWith("data: ")) {
-                  const logMsg = line.slice(6);
-                  if (logMsg && logMsg !== "[DONE]") {
-                    // 실시간 진행 로그가 오면 애니메이션 멈추고, 마지막 로그를 새 메시지로 교체
-                    processing = false;
-                    clearInterval(processingInterval);
-                    const logBody = document.getElementById("system-log-body");
-                    const lastMsg = logBody.lastElementChild;
-                    if (lastMsg) {
-                      lastMsg.textContent = logMsg;
-                    } else {
-                      appendSystemLog(logMsg);
-                    }
+                line = line.trim();
+                if (!line.startsWith("data:")) continue;
+
+                const logMsg = line.slice(5).trim(); // "data:" 이후 내용
+                if (logMsg && logMsg !== "[DONE]") {
+                  clearInterval(processingInterval);
+                  const logBody = document.getElementById("system-log-body");
+                  const lastMsg = logBody.lastElementChild;
+                  if (lastMsg) {
+                    lastMsg.textContent = logMsg;
+                  } else {
+                    appendSystemLog(logMsg);
                   }
                 }
               }
             }
-          } else {
-            const result = await response.json();
+          } else if (contentType.includes("application/json")) {
+            let result;
+            try {
+              result = await response.json();
+            } catch (e) {
+              const errorText = await response.text();
+              appendMessage("bot", "서버 응답 파싱에 실패했습니다.");
+              appendSystemLog(`서버 응답 파싱 실패: ${errorText}`);
+              return;
+            }
+
             processing = false;
             clearInterval(processingInterval);
 
@@ -411,7 +413,11 @@
                 appendSystemLog(`업로드 실패: ${result.detail || "서버 오류"}`);
               }
             }
+          } else {
+            appendMessage("bot", "알 수 없는 응답 형식입니다.");
+            appendSystemLog("지원하지 않는 서버 응답 형식입니다.");
           }
+
         } catch (error) {
           processing = false;
           clearInterval(processingInterval);
