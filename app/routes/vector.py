@@ -1,3 +1,6 @@
+import unicodedata
+import re
+from pathlib import Path
 from fastapi import APIRouter, UploadFile, File
 import os
 import fitz  # PyMuPDF
@@ -21,15 +24,25 @@ def get_embedding(text: str):
     )
     return np.array(response['data'][0]['embedding'], dtype='float32')
 
+# 안전한 파일명 생성 함수
+def safe_filename(name):
+    name = unicodedata.normalize("NFC", name)  # 한글 정규화
+    name = re.sub(r"[^\w.\-]", "_", name)      # 한글, 영문, 숫자, .-_ 외 문자 제거
+    return name
+
+upload_dir = Path("temp_uploads")
+upload_dir.mkdir(exist_ok=True)
+
 @router.post("/upload_pdf")
 async def upload_pdf(file: UploadFile = File(...)):
     try:
-        contents = await file.read()
-        file_path = f"temp_{file.filename}"
-        with open(file_path, "wb") as f:
-            f.write(contents)
+        filename = safe_filename(file.filename)
+        file_path = upload_dir / f"temp_{filename}"
 
-        doc = fitz.open(file_path)
+        with open(file_path, "wb") as f:
+            f.write(await file.read())
+
+        doc = fitz.open(str(file_path))
         for page in doc:
             text = page.get_text()
             if text.strip():
@@ -40,7 +53,11 @@ async def upload_pdf(file: UploadFile = File(...)):
         os.remove(file_path)
         print("저장된 페이지 수:", len(doc_store))
         print("faiss index 벡터 수:", index.ntotal)
-        return {"status": "uploaded and indexed"}
+        return {
+            "status": "uploaded and indexed",
+            "page_count": len(doc_store),
+            "vector_count": index.ntotal
+        }
     except Exception as e:
         import traceback
         print(traceback.format_exc())
