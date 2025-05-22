@@ -1,6 +1,5 @@
 # app/vector_db.py
 import os
-import openai
 import faiss
 import numpy as np
 from dotenv import load_dotenv
@@ -8,9 +7,10 @@ from db.database import async_session
 from sqlalchemy import select
 from db.models import documents, embeddings
 from app.config import settings
+from openai import OpenAI
 
 load_dotenv()
-openai.api_key = settings.OPENAI_API_KEY
+client = OpenAI(api_key=settings.OPENAI_API_KEY)
 
 dimension = 1536  # OpenAI 임베딩 차원
 index = faiss.IndexFlatL2(dimension)
@@ -30,8 +30,8 @@ async def load_faiss_and_docstore():
     return index, doc_store
 
 def get_embedding(text: str):
-    response = openai.Embedding.create(
+    response = client.embeddings.create(
         input=text,
         model="text-embedding-ada-002"
     )
-    return np.array(response['data'][0]['embedding'], dtype='float32')
+    return np.array(response.data[0].embedding, dtype='float32')

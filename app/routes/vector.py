@@ -5,29 +5,14 @@ from fastapi import APIRouter, UploadFile, File
 from fastapi.responses import JSONResponse
 import os
 import fitz  # PyMuPDF
-import openai
-import faiss
-import numpy as np
-from app.config import settings
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import insert
 from db.database import async_session, get_async_engine
 from db.models import documents, embeddings
+from app.config import settings
+from app.vector_db import get_embedding  # 중복 제거: vector_db에서 임포트
 
 router = APIRouter()
-
-openai.api_key = settings.OPENAI_API_KEY
-
-dimension = 1536  # OpenAI Embedding 차원
-index = None
-doc_store = []
-
-def get_embedding(text: str):
-    response = openai.Embedding.create(
-        input=text,
-        model="text-embedding-ada-002"
-    )
-    return np.array(response['data'][0]['embedding'], dtype='float32')
 
 def safe_filename(name):
     name = unicodedata.normalize("NFC", name)
@@ -76,10 +61,10 @@ async def upload_pdf(file: UploadFile = File(...)):
                     )
                     page_count += 1
                     vector_count += 1
+            await session.commit()
         logs.append("PDF가 DB에 저장됨.")
         logs.append("faiss 임베딩 벡터를 메타값 단위로 분할하여 DB에 저장함.")
 
-        await session.commit()
         os.remove(file_path)
 
         # 4. 전체 완료
