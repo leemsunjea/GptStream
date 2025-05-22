@@ -22,7 +22,9 @@ async def chat_stream(request: Request):
     # 🔍 질문을 벡터화하고 관련 문단 검색
     query_embedding = get_embedding(message)
     D, I = index.search(np.array([query_embedding]), k=3)  # 상위 3개
-    related_docs = [doc_store[i] for i in I[0] if i < len(doc_store)]
+    related_docs = []
+    if I and len(I[0]) > 0:
+        related_docs = [doc_store[i] for i in I[0] if i < len(doc_store)]
 
     # 📄 문서 내용 context로 설정
     context_text = "\n\n".join(related_docs)
