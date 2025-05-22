@@ -339,8 +339,8 @@
             for (let line of lines) {
               if (line.startsWith("data: ")) {
                 let content = line.slice(6);
-                // '~~'를 <br>로 변환
-                content = content.replace(/~~/g, "<br>");
+                // '\n'를 <br>로 변환
+                content = content.replace(/\n/g, "<br>");
                 partial += content;
                 if (!lastBotDiv) {
                   lastBotDiv = document.createElement("div");
@@ -467,4 +467,3 @@
 </body>
 
 </html>
-``` 

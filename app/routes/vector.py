@@ -39,16 +39,14 @@ def split_text_to_paragraphs(text: str):
 @router.post("/upload_pdf")
 async def upload_pdf(file: UploadFile = File(...), request: Request = None):
     async def event_stream():
-        logs = []
         file_path = None
         try:
             file_path = await save_upload_file(file, upload_dir)
-            logs.append("PDF 저장 완료")
+            yield f"data: PDF 저장 완료\n\n"
 
             try:
                 doc = fitz.open(str(file_path))
             except Exception as e:
-                logs.append(f"PDF 열기 실패: {e}")
                 yield f"data: PDF를 열 수 없습니다. ({e})\n\n"
                 return
 
@@ -68,10 +66,9 @@ async def upload_pdf(file: UploadFile = File(...), request: Request = None):
                         )
                         doc_id = result.scalar()
                         if not doc_id:
-                            logs.append(f"문서 ID 생성 실패: {file.filename} p{i+1}")
                             continue
                     except Exception as e:
-                        logs.append(f"문서 저장 실패: {e}")
+                        yield f"data: 문서 저장 실패: {e}\n\n"
                         continue
 
                     paragraphs = split_text_to_paragraphs(text)
@@ -84,7 +81,7 @@ async def upload_pdf(file: UploadFile = File(...), request: Request = None):
                                 "embedding": embedding.tobytes()
                             })
                         except Exception as e:
-                            logs.append(f"임베딩 실패 (p{i+1} 문단{j+1}): {e}")
+                            yield f"data: 임베딩 실패 (p{i+1} 문단{j+1}): {e}\n\n"
                             continue
 
                         if len(batch) >= BATCH_SIZE:
@@ -94,7 +91,7 @@ async def upload_pdf(file: UploadFile = File(...), request: Request = None):
                                 batch = []
                             except Exception as e:
                                 await session.rollback()
-                                logs.append(f"벡터 저장 실패: {e}")
+                                yield f"data: 벡터 저장 실패: {e}\n\n"
 
                         yield f"data: {i+1}페이지/{len(doc)} 중 {j+1}문단 처리 완료\n\n"
 
@@ -104,13 +101,12 @@ async def upload_pdf(file: UploadFile = File(...), request: Request = None):
                             await session.commit()
                         except Exception as e:
                             await session.rollback()
-                            logs.append(f"마지막 벡터 저장 실패: {e}")
+                            yield f"data: 마지막 벡터 저장 실패: {e}\n\n"
 
-                logs.append("모든 페이지 처리 완료")
-                yield "data: [DONE]\n\n"
+                yield f"data: 모든 페이지 처리 완료\n\n"
+                yield "data: \n\n[DONE]\n\n"
 
         except Exception as e:
-            logs.append(f"전체 처리 오류: {e}")
             print(traceback.format_exc())
             yield f"data: 오류 발생: {str(e)}\n\n"
 

@@ -38,12 +38,12 @@ async def chat_stream(request: Request):
             "다음은 사용자가 업로드한 문서의 일부입니다. 해당 내용을 바탕으로 정확하고 친절하게 답변해주세요:\n\n"
             + context_text +
             "\n\n또한 사용자에게 문서의 어떤 부분을 참고했는지를 알려주세요.\n\n"
-            "답변에서 줄바꿈이 필요할 때는 줄바꿈 대신 반드시 '~~' 기호를 사용하세요. 예시: 첫 줄~~두 번째 줄"
+            "답변에서 줄바꿈이 필요할 때는 줄바꿈 대신 반드시 '\n' 기호를 사용하세요. 예시: 첫 줄\n두 번째 줄"
         )
     else:
         system_prompt = (
             "업로드된 문서가 없으니 일반 챗봇처럼 답변해주세요. "
-            "답변에서 줄바꿈이 필요할 때는 줄바꿈 대신 반드시 '~~' 기호를 사용하세요. 예시: 첫 줄~~두 번째 줄"
+            "답변에서 줄바꿈이 필요할 때는 줄바꿈 대신 반드시 '\n' 기호를 사용하세요. 예시: 첫 줄\n두 번째 줄"
         )
 
     messages = [
@@ -55,7 +55,7 @@ async def chat_stream(request: Request):
         full_response = ""
         try:
             response = client.chat.completions.create(
-                model="gpt-3.5-turbo",
+                model="gpt-4.1",
                 messages=messages,
                 stream=True
             )
@@ -68,11 +68,11 @@ async def chat_stream(request: Request):
 
             # 참고한 문단을 스트림 마지막에 함께 출력
             if referenced_docs:
-                yield f"data: [참고한 문단]\n\n"
+                yield f"\n\ndata: [참고한 문단]\n\n"
                 for idx, doc in enumerate(referenced_docs, 1):
                     yield f"data: [문단 {idx}]\n{doc}\n\n"
 
-            yield "data: [DONE]\n\n"
+            yield "data: \n\n[DONE]\n\n"
 
             # DB 저장
             async with async_session() as session:
