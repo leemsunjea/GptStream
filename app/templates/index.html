@@ -366,21 +366,41 @@
             method: "POST",
             body: formData
           });
-          const result = await response.json();
-          processing = false;
-          clearInterval(processingInterval);
-
-          if (response.ok) {
-            appendMessage("bot", `PDF가 성공적으로 업로드되어 인덱싱되었습니다. (저장된 페이지 수: ${result.page_count}, 벡터 수: ${result.vector_count})`);
-            if (result.logs && Array.isArray(result.logs)) {
-              result.logs.forEach(msg => appendSystemLog(msg));
+          if (response.body && response.headers.get("content-type")?.includes("text/event-stream")) {
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let partial = "";
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              const text = decoder.decode(value, { stream: true });
+              const lines = text.split("\n");
+              for (let line of lines) {
+                if (line.startsWith("data: ")) {
+                  const logMsg = line.slice(6);
+                  if (logMsg && logMsg !== "[DONE]") {
+                    appendSystemLog(logMsg);
+                  }
+                }
+              }
             }
           } else {
-            appendMessage("bot", `업로드 실패: ${result.detail || "서버 오류"}`);
-            if (result.logs && Array.isArray(result.logs)) {
-              result.logs.forEach(msg => appendSystemLog(msg));
+            const result = await response.json();
+            processing = false;
+            clearInterval(processingInterval);
+
+            if (response.ok) {
+              appendMessage("bot", `PDF가 성공적으로 업로드되어 인덱싱되었습니다. (저장된 페이지 수: ${result.page_count}, 벡터 수: ${result.vector_count})`);
+              if (result.logs && Array.isArray(result.logs)) {
+                result.logs.forEach(msg => appendSystemLog(msg));
+              }
             } else {
-              appendSystemLog(`업로드 실패: ${result.detail || "서버 오류"}`);
+              appendMessage("bot", `업로드 실패: ${result.detail || "서버 오류"}`);
+              if (result.logs && Array.isArray(result.logs)) {
+                result.logs.forEach(msg => appendSystemLog(msg));
+              } else {
+                appendSystemLog(`업로드 실패: ${result.detail || "서버 오류"}`);
+              }
             }
           }
         } catch (error) {
