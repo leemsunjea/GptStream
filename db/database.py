@@ -10,7 +10,10 @@ load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 # DB Engine
-engine = create_async_engine(DATABASE_URL, echo=True)
+def get_async_engine(database_url):
+    return create_async_engine(database_url)
+
+engine = get_async_engine(DATABASE_URL)
 
 # Session 생성기
 async_session = sessionmaker(
@@ -20,3 +23,5 @@ async_session = sessionmaker(
 )
 
 Base = declarative_base()
+
+from db.database import async_session, get_async_engine
