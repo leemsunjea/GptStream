@@ -9,12 +9,8 @@
   <style>
     /* 채팅 버튼 및 팝업창 관련 스타일 */
     #chat-popup {
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      margin: auto;
+      position: static; /* fixed 해제 */
+      margin: 0;
       width: 430px;
       height: 705px;
       background-color: #fff;
@@ -24,7 +20,6 @@
       transition: opacity 0.3s ease, transform 0.3s ease;
       z-index: 999;
       pointer-events: auto;
-      /* 중앙 정렬을 위해 transform 제거 */
     }
 
     #chat-popup.show {
@@ -169,10 +164,8 @@
 
     /* 시스템 로그 팝업창: 오른쪽에 위치 */
     #system-log-popup {
-      position: fixed;
-      top: 0;
-      right: 0;
-      margin: auto;
+      position: static; /* fixed 해제 */
+      margin: 0;
       width: 430px;
       height: 705px;
       background-color: #fff;
@@ -182,7 +175,6 @@
       transition: opacity 0.3s ease, transform 0.3s ease;
       z-index: 998;
       pointer-events: auto;
-      /* 채팅창과 겹치지 않게 오른쪽에 배치 */
       left: unset;
     }
 
@@ -206,6 +198,15 @@
       font-family: monospace;
       max-width: 90%;
       word-break: break-all;
+    }
+
+    body {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 60px; /* 두 창 사이 간격 */
+      background: #f8f9fa;
     }
   </style>
 </head>
@@ -355,12 +356,17 @@
           const result = await response.json();
           if (response.ok) {
             appendMessage("bot", `PDF가 성공적으로 업로드되어 인덱싱되었습니다. (저장된 페이지 수: ${result.page_count}, 벡터 수: ${result.vector_count})`);
-            appendSystemLog("PDF 업로드됨.");
-            appendSystemLog("임베드 완료됨.");
-            appendSystemLog("DB 저장됨.");
+            // logs 배열이 있으면 모두 시스템 로그로 출력
+            if (result.logs && Array.isArray(result.logs)) {
+              result.logs.forEach(msg => appendSystemLog(msg));
+            }
           } else {
             appendMessage("bot", `업로드 실패: ${result.detail || "서버 오류"}`);
-            appendSystemLog(`업로드 실패: ${result.detail || "서버 오류"}`);
+            if (result.logs && Array.isArray(result.logs)) {
+              result.logs.forEach(msg => appendSystemLog(msg));
+            } else {
+              appendSystemLog(`업로드 실패: ${result.detail || "서버 오류"}`);
+            }
           }
         } catch (error) {
           console.error("업로드 오류:", error);
@@ -383,4 +389,3 @@
 </body>
 
 </html>
-``` 
