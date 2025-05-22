@@ -250,7 +250,8 @@
             for (let line of lines) {
               if (line.startsWith("data: ")) {
                 const content = line.slice(6);
-                if (content === "[DONE]") return;
+                // 여기서 [참고한 문단], [문단 1] 등도 content로 들어옴
+                // 원하는 방식으로 화면에 표시 가능
                 partial += content;
                 if (!lastBotDiv) {
                   lastBotDiv = document.createElement("div");
