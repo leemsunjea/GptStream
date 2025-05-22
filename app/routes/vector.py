@@ -11,19 +11,24 @@ import asyncio
 import uuid
 
 router = APIRouter()
-upload_dir = "/tmp/temp_uploads"
+upload_dir = "./uploads"  # /tmp 대신 애플리케이션 디렉토리 사용
 BATCH_SIZE = 5
 task_statuses = {}  # 임시 상태 저장
 
+def safe_filename(filename: str) -> str:
+    return "".join(c for c in filename if c.isalnum() or c in (' ', '.', '_')).rstrip()
+
 async def save_upload_file(file: UploadFile, upload_dir: str):
     os.makedirs(upload_dir, exist_ok=True)
-    file_path = os.path.join(upload_dir, file.filename)
+    filename = safe_filename(file.filename)
+    file_path = os.path.join(upload_dir, filename)
     with open(file_path, "wb") as f:
         f.write(await file.read())
+    print(f"[DEBUG] 파일 저장 성공: {file_path}")
     return file_path
 
 async def process_pdf(task_id: str, file_path: str, filename: str, session, logs):
-    task_statuses[task_id] = {"status": "pending", "logs": logs}
+    logs.append(f"처리할 파일 경로: {file_path}")
     try:
         doc = fitz.open(file_path)
         if len(doc) > 50:
@@ -81,8 +86,8 @@ async def upload_pdf(file: UploadFile = File(...), background_tasks: BackgroundT
         logs.append(f"전체 처리 오류: {e}")
         return JSONResponse({"success": False, "logs": logs, "detail": str(e)}, status_code=500)
     finally:
-        if file_path and os.path.exists(file_path):
-            os.remove(file_path)
+        # 파일 삭제를 제거하거나 process_pdf 내부로 이동
+        pass
 
 @router.get("/task_status/{task_id}")
 async def get_task_status(task_id: str):
