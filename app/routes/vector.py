@@ -18,7 +18,7 @@ router = APIRouter()
 upload_dir = Path("/tmp/temp_uploads")
 upload_dir.mkdir(parents=True, exist_ok=True)
 
-BATCH_SIZE = 10
+BATCH_SIZE = 5
 
 def safe_filename(name):
     name = unicodedata.normalize("NFC", name)
