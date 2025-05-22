@@ -12,6 +12,7 @@ from app.config import settings
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import insert
 from db.database import async_session, get_async_engine
+from db.models import documents, embeddings
 
 router = APIRouter()
 
