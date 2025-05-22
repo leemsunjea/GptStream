@@ -11,20 +11,20 @@ import asyncio
 import uuid
 
 router = APIRouter()
-upload_dir = "./uploads"  # /tmp 대신 애플리케이션 디렉토리 사용
+upload_dir = "/tmp/temp_uploads"
 BATCH_SIZE = 5
 task_statuses = {}  # 임시 상태 저장
 
-def safe_filename(filename: str) -> str:
-    return "".join(c for c in filename if c.isalnum() or c in (' ', '.', '_')).rstrip()
-
 async def save_upload_file(file: UploadFile, upload_dir: str):
     os.makedirs(upload_dir, exist_ok=True)
-    filename = safe_filename(file.filename)
-    file_path = os.path.join(upload_dir, filename)
-    with open(file_path, "wb") as f:
-        f.write(await file.read())
-    print(f"[DEBUG] 파일 저장 성공: {file_path}")
+    file_path = os.path.join(upload_dir, file.filename)
+    try:
+        with open(file_path, "wb") as f:
+            f.write(await file.read())
+        print(f"[DEBUG] 파일 저장 성공: {file_path}")
+    except Exception as e:
+        print(f"[DEBUG] 파일 저장 실패: {e}")
+        raise
     return file_path
 
 async def process_pdf(task_id: str, file_path: str, filename: str, session, logs):
