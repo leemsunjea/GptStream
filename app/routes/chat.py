@@ -9,10 +9,12 @@ from app.config import settings
 from db.models import ChatHistory
 from db.database import async_session
 from app.vector_db import get_embedding, index, doc_store  # vector 연동
+from openai import OpenAI
 
 router = APIRouter()
 
 openai.api_key = settings.OPENAI_API_KEY
+client = OpenAI(api_key=settings.OPENAI_API_KEY)
 
 @router.post("/chat/stream")
 async def chat_stream(request: Request):
@@ -47,23 +49,21 @@ async def chat_stream(request: Request):
     async def event_stream():
         full_response = ""
         try:
-            response = openai.ChatCompletion.create(
-                model="gpt-3.5-turbo",
+            response = client.chat.completions.create(
+                model="gpt-4o",  # 또는 "gpt-4.0", "gpt-3.5-turbo" 등
                 messages=messages,
                 stream=True
             )
             for chunk in response:
-                if chunk.choices:
-                    content = chunk.choices[0].delta.get("content")
-                    if content:
-                        full_response += content
-                        yield f"data: {content}\n\n"
-                        await asyncio.sleep(0)
+                content = getattr(chunk.choices[0].delta, "content", None)
+                if content:
+                    full_response += content
+                    yield f"data: {content}\n\n"
+                    await asyncio.sleep(0)
 
-            # 스트림 종료 신호를 먼저 보냄
             yield "data: [DONE]\n\n"
 
-            # 그 다음에 DB에 저장
+            # DB 저장
             async with async_session() as session:
                 chat = ChatHistory(user_message=message, bot_response=full_response)
                 session.add(chat)
