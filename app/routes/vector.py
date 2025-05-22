@@ -4,12 +4,11 @@ import fitz  # PyMuPDF
 import openai
 import faiss
 import numpy as np
-from dotenv import load_dotenv
+from app.config import settings
 
 router = APIRouter()
 
-load_dotenv()
-openai.api_key = os.getenv("OPENAI_API_KEY")
+openai.api_key = settings.OPENAI_API_KEY
 
 dimension = 1536  # OpenAI Embedding 차원
 index = faiss.IndexFlatL2(dimension)

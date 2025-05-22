@@ -47,7 +47,7 @@ async def chat_stream(request: Request):
         full_response = ""
         try:
             response = openai.ChatCompletion.create(
-                model="gpt-4",
+                model="gpt-3.5-turbo",
                 messages=messages,
                 stream=True
             )
