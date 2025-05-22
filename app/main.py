@@ -7,8 +7,22 @@ from app.routes import home, chat
 from app.routes import vector  # 추가
 from app.vector_db import load_faiss_and_docstore
 from fastapi import FastAPI, HTTPException
+from app.routes.vector import router
+from db.models import documents, embeddings
+import asyncio
 
 app = FastAPI()
+
+app.include_router(router)
+
+# 서버 실행 시 초기화
+@app.on_event("startup")
+async def on_startup():
+    async with async_session() as session:
+        async with session.begin():
+            await session.execute(documents.delete())
+            await session.execute(embeddings.delete())
+    print("✅ DB 초기화 완료")
 
 # DB 의존성
 async def get_db():
