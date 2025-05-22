@@ -20,17 +20,23 @@ async def chat_stream(request: Request):
     message = data.get("message", "")
 
     # 🔍 질문을 벡터화하고 관련 문단 검색
-    query_embedding = get_embedding(message)
-    D, I = index.search(np.array([query_embedding]), k=3)  # 상위 3개
-    related_docs = []
-    if I and len(I[0]) > 0:
-        related_docs = [doc_store[i] for i in I[0] if i < len(doc_store)]
+    context_text = ""
+    if index.ntotal > 0:
+        query_embedding = get_embedding(message)
+        D, I = index.search(np.array([query_embedding]), k=3)
+        related_docs = []
+        if I is not None and len(I[0]) > 0:
+            related_docs = [doc_store[i] for i in I[0] if i >= 0 and i < len(doc_store)]
+        if related_docs:
+            context_text = "\n\n".join(related_docs)
 
-    # 📄 문서 내용 context로 설정
-    context_text = "\n\n".join(related_docs)
-    system_prompt = (
-        "다음은 사용자가 업로드한 문서의 일부입니다. 해당 내용을 바탕으로 정확하고 친절하게 답변해주세요:\n\n" + context_text
-    )
+    # system 프롬프트 생성
+    if context_text:
+        system_prompt = (
+            "다음은 사용자가 업로드한 문서의 일부입니다. 해당 내용을 바탕으로 정확하고 친절하게 답변해주세요:\n\n" + context_text
+        )
+    else:
+        system_prompt = "업로드된 문서가 없으니 일반 챗봇처럼 답변해주세요."
 
     messages = [
         {"role": "system", "content": system_prompt},
