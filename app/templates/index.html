@@ -166,6 +166,47 @@
     #uploadPdfBtn:hover {
       background-color: #0056b3;
     }
+
+    /* 시스템 로그 팝업창: 오른쪽에 위치 */
+    #system-log-popup {
+      position: fixed;
+      top: 0;
+      right: 0;
+      margin: auto;
+      width: 430px;
+      height: 705px;
+      background-color: #fff;
+      border-radius: 30px;
+      box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3);
+      opacity: 1;
+      transition: opacity 0.3s ease, transform 0.3s ease;
+      z-index: 998;
+      pointer-events: auto;
+      /* 채팅창과 겹치지 않게 오른쪽에 배치 */
+      left: unset;
+    }
+
+    #system-log-body {
+      padding: 10px;
+      height: calc(100% - 80px);
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      font-size: 15px;
+      color: #333;
+    }
+
+    /* 시스템 로그 메시지 스타일 */
+    .system-log-message {
+      padding: 10px;
+      margin: 5px;
+      border-radius: 10px;
+      background-color: #f3f3f3;
+      color: #222;
+      font-family: monospace;
+      max-width: 90%;
+      word-break: break-all;
+    }
   </style>
 </head>
 
@@ -202,6 +243,21 @@
     </div>
   </div>
 
+  <!-- 시스템 로그 팝업창 (채팅창과 동일한 UI, 오른쪽에 위치) -->
+  <div id="system-log-popup">
+    <div id="chat-header">
+      <div id="chat-svg">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="#28a745" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="12" cy="12" r="10" />
+        </svg>
+      </div>
+      <small>시스템 로그</small>
+    </div>
+    <div id="system-log-body">
+      <!-- 시스템 로그 메시지가 여기에 출력됩니다 -->
+    </div>
+  </div>
+
   <script>
     document.addEventListener("DOMContentLoaded", function () {
       const API_BASE = window.location.origin;
@@ -220,6 +276,16 @@
         msg.textContent = message;
         chatBox.appendChild(msg);
         chatBox.scrollTop = chatBox.scrollHeight;
+      }
+
+      // 시스템 로그 출력 함수-------------------------------------
+      function appendSystemLog(message) {
+        const logBody = document.getElementById("system-log-body");
+        const msg = document.createElement("div");
+        msg.classList.add("system-log-message");
+        msg.textContent = message;
+        logBody.appendChild(msg);
+        logBody.scrollTop = logBody.scrollHeight;
       }
 
       // 챗봇 메시지 전송 함수
@@ -289,12 +355,17 @@
           const result = await response.json();
           if (response.ok) {
             appendMessage("bot", `PDF가 성공적으로 업로드되어 인덱싱되었습니다. (저장된 페이지 수: ${result.page_count}, 벡터 수: ${result.vector_count})`);
+            appendSystemLog("PDF 업로드됨.");
+            appendSystemLog("임베드 완료됨.");
+            appendSystemLog("DB 저장됨.");
           } else {
             appendMessage("bot", `업로드 실패: ${result.detail || "서버 오류"}`);
+            appendSystemLog(`업로드 실패: ${result.detail || "서버 오류"}`);
           }
         } catch (error) {
           console.error("업로드 오류:", error);
           appendMessage("bot", "PDF 업로드 중 오류가 발생했습니다.");
+          appendSystemLog("PDF 업로드 중 오류가 발생했습니다.");
         }
       }
 
@@ -312,3 +383,4 @@
 </body>
 
 </html>
+``` 
