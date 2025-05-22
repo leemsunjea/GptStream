@@ -12,7 +12,8 @@ import uuid
 
 router = APIRouter()
 upload_dir = "/tmp/temp_uploads"
-BATCH_SIZE = 5  # 배치 크기 감소
+BATCH_SIZE = 5
+task_statuses = {}  # 임시 상태 저장
 
 async def save_upload_file(file: UploadFile, upload_dir: str):
     os.makedirs(upload_dir, exist_ok=True)
@@ -22,12 +23,13 @@ async def save_upload_file(file: UploadFile, upload_dir: str):
     return file_path
 
 async def process_pdf(task_id: str, file_path: str, filename: str, session, logs):
+    task_statuses[task_id] = {"status": "pending", "logs": logs}
     try:
         doc = fitz.open(file_path)
         if len(doc) > 50:
             logs.append("PDF 페이지 수가 너무 많습니다. 50페이지 이하로 제한됩니다.")
-            return {"task_id": task_id, "success": False, "logs": logs, "detail": "페이지 수 초과"}
-        
+            task_statuses[task_id] = {"status": "failed", "logs": logs, "detail": "페이지 수 초과"}
+            return
         async with session.begin():
             for i, page in enumerate(doc):
                 text = page.get_text()
@@ -43,7 +45,6 @@ async def process_pdf(task_id: str, file_path: str, filename: str, session, logs
                 )
                 doc_id = result.scalar()
                 logs.append(f"페이지 {i+1}: 문서 ID {doc_id} 저장")
-                
                 paragraphs = split_text_to_paragraphs(text)
                 tasks = [get_embedding_async(para) for para in paragraphs]
                 embeddings = await asyncio.gather(*tasks, return_exceptions=True)
@@ -55,18 +56,17 @@ async def process_pdf(task_id: str, file_path: str, filename: str, session, logs
                     await session.execute(insert(embeddings), batch)
                     await session.commit()
                     logs.append(f"페이지 {i+1}: {len(batch)} 문단 임베딩 저장")
-        
         logs.append("모든 페이지 처리 완료")
-        return {"task_id": task_id, "success": True, "logs": logs}
+        task_statuses[task_id] = {"status": "completed", "logs": logs, "page_count": len(doc)}
     except Exception as e:
         logs.append(f"PDF 처리 오류: {e}")
-        return {"task_id": task_id, "success": False, "logs": logs, "detail": str(e)}
+        task_statuses[task_id] = {"status": "failed", "logs": logs, "detail": str(e)}
 
 @router.post("/upload_pdf")
 async def upload_pdf(file: UploadFile = File(...), background_tasks: BackgroundTasks = None):
     logs = []
     file_path = None
-    task_id = str(uuid.uuid4())  # 고유 작업 ID 생성
+    task_id = str(uuid.uuid4())
     try:
         file_path = await save_upload_file(file, upload_dir)
         logs.append(f"PDF 저장 완료: {file.filename}")
@@ -83,3 +83,8 @@ async def upload_pdf(file: UploadFile = File(...), background_tasks: BackgroundT
     finally:
         if file_path and os.path.exists(file_path):
             os.remove(file_path)
+
+@router.get("/task_status/{task_id}")
+async def get_task_status(task_id: str):
+    status = task_statuses.get(task_id, {"status": "pending"})
+    return JSONResponse(status)
