@@ -4,6 +4,7 @@ from fastapi import FastAPI, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from db.database import async_session
 from app.routes import home, chat
+from app.routes import vector  # 추가
 
 app = FastAPI()
 
@@ -20,3 +21,4 @@ async def test(db: AsyncSession = Depends(get_db)):
 # 기존 라우터 등록
 app.include_router(home.router)
 app.include_router(chat.router)
+app.include_router(vector.router)  # 추가

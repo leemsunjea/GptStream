@@ -159,6 +159,11 @@
     <div id="chat-body">
       <div class="message bot">안녕하세요! 무엇을 도와드릴까요?</div>
     </div>
+    <!-- PDF 업로드 영역 -->
+    <div id="pdf-upload" style="padding: 10px; border-top: 1px solid #ddd;">
+      <input type="file" id="pdfInput" accept="application/pdf" />
+      <button id="uploadPdfBtn">PDF 업로드</button>
+    </div>
     <div id="chat-input">
       <div class="input-wrapper">
         <input type="text" id="chat-input-field" placeholder="메시지를 입력해주세요.">
@@ -167,82 +172,113 @@
     </div>
   </div>
 
-<script>
-  document.addEventListener("DOMContentLoaded", function () {
-    const API_BASE = window.location.origin;
-    const input = document.getElementById("chat-input-field");
-    const chatBox = document.getElementById("chat-body");
-    const sendButton = document.getElementById("sendButton");
-    let lastBotDiv = null;
-    let partial = "";
+  <script>
+    document.addEventListener("DOMContentLoaded", function () {
+      const API_BASE = window.location.origin;
+      const input = document.getElementById("chat-input-field");
+      const chatBox = document.getElementById("chat-body");
+      const sendButton = document.getElementById("sendButton");
+      // PDF 업로드 핸들러
+      const pdfInput = document.getElementById("pdfInput");
+      const uploadBtn = document.getElementById("uploadPdfBtn");
+      let lastBotDiv = null;
+      let partial = "";
 
-    function sendMessage() {
-      const message = input.value.trim();
-      if (!message) return;
+      uploadBtn.addEventListener("click", () => {
+        const file = pdfInput.files[0];
+        if (!file || file.type !== "application/pdf") {
+          alert("PDF 파일을 선택해주세요.");
+          return;
+        }
 
-      appendMessage("user", message);
-      input.value = "";
-      sendButton.style.display = "none";
+        const formData = new FormData();
+        formData.append("pdf", file);
 
-      partial = "";
-      lastBotDiv = null;
+        fetch(`${API_BASE}/upload_pdf`, {
+          method: "POST",
+          body: formData
+        })
+          .then(res => res.json())
+          .then(data => {
+            if (data.success) {
+              appendMessage("bot", "PDF 업로드가 완료되었습니다.");
+            } else {
+              appendMessage("bot", "업로드 실패: " + (data.error || "알 수 없는 오류"));
+            }
+          })
+          .catch(err => {
+            console.error("PDF 업로드 오류:", err);
+            appendMessage("bot", "PDF 업로드 중 오류가 발생했습니다.");
+          });
+      });
 
-      fetch(`${API_BASE}/chat/stream`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: message })
-      }).then(response => {
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
+      function sendMessage() {
+        const message = input.value.trim();
+        if (!message) return;
 
-        async function readStream() {
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            const text = decoder.decode(value, { stream: true });
-            const lines = text.split("\n");
+        appendMessage("user", message);
+        input.value = "";
+        sendButton.style.display = "none";
 
-            for (let line of lines) {
-              if (line.startsWith("data: ")) {
-                const content = line.slice(6);
-                if (content === "[DONE]") return;
-                partial += content;
-                if (!lastBotDiv) {
-                  lastBotDiv = document.createElement("div");
-                  lastBotDiv.classList.add("message", "bot");
-                  chatBox.appendChild(lastBotDiv);
+        partial = "";
+        lastBotDiv = null;
+
+        fetch(`${API_BASE}/chat/stream`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: message })
+        }).then(response => {
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder();
+
+          async function readStream() {
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              const text = decoder.decode(value, { stream: true });
+              const lines = text.split("\n");
+
+              for (let line of lines) {
+                if (line.startsWith("data: ")) {
+                  const content = line.slice(6);
+                  if (content === "[DONE]") return;
+                  partial += content;
+                  if (!lastBotDiv) {
+                    lastBotDiv = document.createElement("div");
+                    lastBotDiv.classList.add("message", "bot");
+                    chatBox.appendChild(lastBotDiv);
+                  }
+                  lastBotDiv.textContent = partial;
+                  chatBox.scrollTop = chatBox.scrollHeight;
                 }
-                lastBotDiv.textContent = partial;
-                chatBox.scrollTop = chatBox.scrollHeight;
               }
             }
           }
-        }
 
-        readStream();
-      }).catch(err => {
-        console.error("전송 오류:", err);
-        appendMessage("bot", "오류가 발생했습니다. 다시 시도해주세요.");
-      });
-    }
-
-    function appendMessage(role, message) {
-      const msg = document.createElement("div");
-      msg.classList.add("message", role);
-      msg.textContent = message;
-      chatBox.appendChild(msg);
-      chatBox.scrollTop = chatBox.scrollHeight;
-    }
-
-    sendButton.addEventListener("click", sendMessage);
-    input.addEventListener("keypress", function (e) {
-      if (e.key === "Enter" && !e.shiftKey) {
-        e.preventDefault();
-        sendMessage();
+          readStream();
+        }).catch(err => {
+          console.error("전송 오류:", err);
+          appendMessage("bot", "오류가 발생했습니다. 다시 시도해주세요.");
+        });
       }
+
+      function appendMessage(role, message) {
+        const msg = document.createElement("div");
+        msg.classList.add("message", role);
+        msg.textContent = message;
+        chatBox.appendChild(msg);
+        chatBox.scrollTop = chatBox.scrollHeight;
+      }
+
+      sendButton.addEventListener("click", sendMessage);
+      input.addEventListener("keypress", function (e) {
+        if (e.key === "Enter" && !e.shiftKey) {
+          e.preventDefault();
+          sendMessage();
+        }
+      });
     });
-  });
-</script>
+  </script>
 </body>
 
 </html>
