@@ -118,9 +118,3 @@ async def upload_pdf(file: UploadFile = File(...)):
     finally:
         if file_path and os.path.exists(file_path):
             os.remove(file_path)
-
-    # SSE vs JSON 판단
-    if request and request.headers.get("accept") == "text/event-stream":
-        return StreamingResponse(event_stream(), media_type="text/event-stream")
-    else:
-        return JSONResponse({"detail": "SSE 클라이언트가 아닙니다. Accept: text/event-stream 필요"})
