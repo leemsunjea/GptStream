@@ -320,7 +320,6 @@
             for (let line of lines) {
               if (line.startsWith("data: ")) {
                 const content = line.slice(6);
-                appendSystemLog(content);
                 partial += content;
                 if (!lastBotDiv) {
                   lastBotDiv = document.createElement("div");
