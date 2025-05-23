@@ -31,8 +31,12 @@ async def chat_stream(request: Request):
             return StreamingResponse(event_stream(), media_type="text/event-stream")
         
         print(f"FAISS 인덱스 벡터 개수: {index.ntotal}")
-        D, I = index.search(np.array([query_embedding]), k=7)  # 상위 7개 문서 검색
-        print(f"검색 결과: {I}, 거리: {D}")
+        try:
+            D, I = index.search(np.array([query_embedding]), k=7)  # 상위 7개 문서 검색
+            print(f"검색 결과: {I}, 거리: {D}")
+        except Exception as e:
+            print(f"FAISS 검색 오류: {e}")
+            return StreamingResponse(event_stream(), media_type="text/event-stream")
         
         if I is not None and len(I[0]) > 0:
             referenced_docs = [doc_store[i] for i in I[0] if i >= 0 and i < len(doc_store)]
