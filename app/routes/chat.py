@@ -32,7 +32,7 @@ async def chat_stream(request: Request):
         
         print(f"[DEBUG] FAISS 인덱스 벡터 개수: {index.ntotal}")
         try:
-            D, I = index.search(np.array([query_embedding]), k=7)  # 상위 7개 문서 검색
+            D, I = index.search(np.array([query_embedding]), k=3)  # 상위 7개 문서 검색
             print(f"[DEBUG] 검색 결과 인덱스: {I}, 거리: {D}")
         except Exception as e:
             print(f"[ERROR] FAISS 검색 중 오류 발생: {e}")
@@ -42,13 +42,16 @@ async def chat_stream(request: Request):
             referenced_docs = [doc_store[i] for i in I[0] if i >= 0 and i < len(doc_store)]
             print(f"[DEBUG] 검색된 문서 개수: {len(referenced_docs)}")
             if len(referenced_docs) > 0:
-                print(f"[DEBUG] 첫 번째 검색된 문서 내용: {referenced_docs[0][:100]}")  # 첫 번째 문서 일부 출력
+                print(f"[DEBUG] 첫 번째 검색된 문서 내용: {referenced_docs[0]}")  # [:100] 제거
             else:
                 print("[DEBUG] 검색된 문서가 없습니다.")
         else:
             print("[DEBUG] 검색 결과가 없습니다.")
     else:
         print("[DEBUG] 인덱스에 문서가 없습니다.")
+
+    # 문서 검색 후 context_text 생성
+    context_text = "\n\n".join(referenced_docs) if referenced_docs else ""
 
     # 개선된 시스템 프롬프트
     if context_text:
