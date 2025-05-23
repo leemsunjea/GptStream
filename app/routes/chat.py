@@ -26,24 +26,28 @@ async def chat_stream(request: Request):
     referenced_docs = []
     if index.ntotal > 0:
         query_embedding = await get_embedding(message)
-        D, I = index.search(np.array([query_embedding]), k=3)
+        D, I = index.search(np.array([query_embedding]), k=7)  # 상위 3개 문서 검색
         if I is not None and len(I[0]) > 0:
             referenced_docs = [doc_store[i] for i in I[0] if i >= 0 and i < len(doc_store)]
         if referenced_docs:
             context_text = "\n\n".join(referenced_docs)
+            # 토큰 길이 제한 (예: 4000자)
+            if len(context_text) > 4000:
+                context_text = context_text[:4000] + "\n\n[문서 일부 생략됨]"
 
-    # system 프롬프트 생성
+    # 개선된 시스템 프롬프트
     if context_text:
         system_prompt = (
-            "다음은 사용자가 업로드한 문서의 일부입니다. 해당 내용을 바탕으로 정확하고 친절하게 답변해주세요:\n\n"
-            + context_text +
-            "\n\n또한 사용자에게 문서의 어떤 부분을 참고했는지를 알려주세요.\n\n"
-            "답변에서 줄바꿈이 필요할 때는 줄바꿈 대신 반드시 '\n' 기호를 사용하세요. 예시: 첫 줄\n두 번째 줄"
+            "다음은 사용자가 업로드한 문서에서 검색된 내용입니다. 이 내용을 기반으로 사용자의 질문에 답변해주세요. "
+            "만약 내용이 질문에 답변하기에 충분하지 않다면, 그 사실을 명시하세요. "
+            "또한 답변에 사용된 문서의 특정 부분을 반드시 언급하세요.\n\n"
+            "문서 내용:\n" + context_text + "\n\n"
+            "답변에서 줄바꿈은 '\n'으로 표시하세요."
         )
     else:
         system_prompt = (
             "업로드된 문서가 없으니 일반 챗봇처럼 답변해주세요. "
-            "답변에서 줄바꿈이 필요할 때는 줄바꿈 대신 반드시 '\n' 기호를 사용하세요. 예시: 첫 줄\n두 번째 줄"
+            "답변에서 줄바꿈은 '\n'으로 표시하세요."
         )
 
     messages = [
@@ -55,7 +59,7 @@ async def chat_stream(request: Request):
         full_response = ""
         try:
             response = client.chat.completions.create(
-                model="gpt-4.1",
+                model="gpt-4",  # 올바른 모델 이름으로 수정
                 messages=messages,
                 stream=True
             )
@@ -66,7 +70,7 @@ async def chat_stream(request: Request):
                     yield f"data: {content}\n\n"
                     await asyncio.sleep(0)
 
-            # 참고한 문단을 스트림 마지막에 함께 출력
+            # 참조 문서 출력
             if referenced_docs:
                 yield f"\n\ndata: [참고한 문단]\n\n"
                 for idx, doc in enumerate(referenced_docs, 1):
@@ -84,7 +88,7 @@ async def chat_stream(request: Request):
                 await session.commit()
         except Exception as e:
             import traceback
-            print("DB 저장 중 오류:", e)
+            print("오류 발생:", e)
             traceback.print_exc()
             yield f"data: [ERROR] {str(e)}\n\n"
 

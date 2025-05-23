@@ -170,6 +170,7 @@
     #system-log-body {
       padding: 10px;
       height: calc(100% - 80px);
+      max-height: calc(100% - 80px);
       overflow-y: auto;
       overflow-x: hidden;
       display: flex;
@@ -180,7 +181,7 @@
       scrollbar-color: #bbb #f3f3f3;
     }
 
-    /* #system-log-body::-webkit-scrollbar {
+    #system-log-body::-webkit-scrollbar {
       width: 8px;
       background: #f3f3f3;
       border-radius: 8px;
@@ -189,7 +190,7 @@
     #system-log-body::-webkit-scrollbar-thumb {
       background: #bbb;
       border-radius: 8px;
-    } */
+    }
 
     .system-log-message {
       padding: 10px;
@@ -432,7 +433,7 @@
           }
         }, 5000); // 5초마다 폴링
       }
-      
+
       // PDF 업로드 버튼 클릭 시 파일 선택창 열기
       uploadButton.addEventListener("click", function () {
         fileInput.value = "";
