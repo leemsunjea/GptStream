@@ -1,3 +1,4 @@
+# app/vector_db.py
 import os
 import faiss
 import numpy as np
@@ -9,25 +10,26 @@ from app.config import settings
 from openai import OpenAI
 from typing import Optional
 import asyncio
-import aiohttp
 
 load_dotenv()
 client = OpenAI(api_key=settings.OPENAI_API_KEY)
 
 dimension = 1536
 index = faiss.IndexFlatL2(dimension)
-doc_store = []
+doc_store = []  # 전역 변수로 선언된 문서 저장소
 
 async def load_faiss_and_docstore():
+    global doc_store  # 전역 변수 사용 명시
     embeddings_list = []
     async with async_session() as session:
         # 문서 내용 로드
         try:
             docs = await session.execute(select(documents.c.content).order_by(documents.c.id))
+            doc_store.clear()  # 기존 데이터 초기화
             doc_store.extend([row[0] for row in docs.fetchall()])
             print(f"[DEBUG] 문서 개수: {len(doc_store)}")
             if len(doc_store) > 0:
-                print(f"[DEBUG] 첫 번째 문서 내용: {doc_store[0][:100]}")  # 첫 번째 문서 일부 출력
+                print(f"[DEBUG] 첫 번째 문서 내용: {doc_store[0][:100]}")
             else:
                 print("[DEBUG] 문서 데이터가 없습니다.")
         except Exception as e:
@@ -39,7 +41,7 @@ async def load_faiss_and_docstore():
             embeddings_list = [np.frombuffer(row[0], dtype=np.float32) for row in embs.fetchall()]
             print(f"[DEBUG] 임베딩 개수: {len(embeddings_list)}")
             if len(embeddings_list) > 0:
-                print(f"[DEBUG] 첫 번째 임베딩 데이터: {embeddings_list[0][:5]}")  # 첫 번째 임베딩 일부 출력
+                print(f"[DEBUG] 첫 번째 임베딩 데이터: {embeddings_list[0][:5]}")
             else:
                 print("[DEBUG] 임베딩 데이터가 없습니다.")
         except Exception as e:
@@ -55,6 +57,8 @@ async def load_faiss_and_docstore():
     else:
         print("[DEBUG] FAISS 인덱스가 비어 있습니다. 데이터가 추가되지 않았습니다.")
     return index, doc_store
+
+# 나머지 함수 (get_embedding_async, split_text_to_paragraphs, search_similar_documents 등)는 그대로 유지
 
 async def get_embedding_async(text: str) -> Optional[np.ndarray]:
     try:
