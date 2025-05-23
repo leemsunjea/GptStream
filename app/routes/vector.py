@@ -40,7 +40,9 @@ async def process_pdf(task_id: str, file_path: str, filename: str, session, logs
                 text = page.get_text()
                 if not text.strip():
                     logs.append(f"페이지 {i+1}: 텍스트 없음")
-                    continue
+                    print(f"[DEBUG] 페이지 {i+1}: 텍스트 없음")
+                    continue  # 텍스트가 비어 있으면 저장하지 않음
+
                 result = await session.execute(
                     insert(documents).values(
                         pdf_name=filename,
@@ -50,6 +52,7 @@ async def process_pdf(task_id: str, file_path: str, filename: str, session, logs
                 )
                 doc_id = result.scalar()
                 logs.append(f"페이지 {i+1}: 문서 ID {doc_id} 저장")
+                print(f"[DEBUG] 저장된 문서 ID: {doc_id}, 페이지 번호: {i+1}, 내용: {text[:100]}")  # 일부 데이터 출력
                 paragraphs = split_text_to_paragraphs(text)
                 tasks = [get_embedding_async(para) for para in paragraphs]
                 embedding_results = await asyncio.gather(*tasks, return_exceptions=True)
