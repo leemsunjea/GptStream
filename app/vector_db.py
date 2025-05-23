@@ -61,4 +61,4 @@ async def pollTaskStatus(task_id, api_base, append_system_log):
                 if result.get("logs") and isinstance(result["logs"], list):
                     for msg in result["logs"]:
                         append_system_log(msg)
-        await asyncio.sleep(5)  # 5초마다 상태 확인
+        await asyncio.sleep(5)  # 5초마다 상태 확인 
