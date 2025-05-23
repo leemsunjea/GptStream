@@ -1,3 +1,7 @@
 {
-    "liveServer.settings.port": 5501
+    "liveServer.settings.port": 5501,
+    "liveshare.accessibility.soundsEnabled": false,
+    "liveshare.accessibility.soundVolume": 0,
+    "liveshare.accessibility.voiceVolume": 0,
+    "editor.accessibilitySupport": "off"
 }
