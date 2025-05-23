@@ -27,24 +27,28 @@ async def chat_stream(request: Request):
     if index.ntotal > 0:
         query_embedding = await get_embedding(message)
         if query_embedding is None:
-            print("쿼리 임베딩 생성 실패")
+            print("[ERROR] 쿼리 임베딩 생성 실패")
             return StreamingResponse(event_stream(), media_type="text/event-stream")
         
-        print(f"FAISS 인덱스 벡터 개수: {index.ntotal}")
+        print(f"[DEBUG] FAISS 인덱스 벡터 개수: {index.ntotal}")
         try:
             D, I = index.search(np.array([query_embedding]), k=7)  # 상위 7개 문서 검색
-            print(f"검색 결과: {I}, 거리: {D}")
+            print(f"[DEBUG] 검색 결과 인덱스: {I}, 거리: {D}")
         except Exception as e:
-            print(f"FAISS 검색 오류: {e}")
+            print(f"[ERROR] FAISS 검색 중 오류 발생: {e}")
             return StreamingResponse(event_stream(), media_type="text/event-stream")
         
         if I is not None and len(I[0]) > 0:
             referenced_docs = [doc_store[i] for i in I[0] if i >= 0 and i < len(doc_store)]
-        if referenced_docs:
-            context_text = "\n\n".join(referenced_docs)
-            # 토큰 길이 제한 (예: 4000자)
-            if len(context_text) > 4000:
-                context_text = context_text[:4000] + "\n\n[문서 일부 생략됨]"
+            print(f"[DEBUG] 검색된 문서 개수: {len(referenced_docs)}")
+            if len(referenced_docs) > 0:
+                print(f"[DEBUG] 첫 번째 검색된 문서 내용: {referenced_docs[0][:100]}")  # 첫 번째 문서 일부 출력
+            else:
+                print("[DEBUG] 검색된 문서가 없습니다.")
+        else:
+            print("[DEBUG] 검색 결과가 없습니다.")
+    else:
+        print("[DEBUG] 인덱스에 문서가 없습니다.")
 
     # 개선된 시스템 프롬프트
     if context_text:

@@ -97,7 +97,7 @@ async def search_similar_documents(message):
         
         print(f"[DEBUG] FAISS 인덱스 벡터 개수: {index.ntotal}")
         try:
-            D, I = index.search(np.array([query_embedding]), k=7)  # 상위 7개 문서 검색
+            D, I = index.search(np.array([query_embedding]), k=3)  # 상위 7개 문서 검색
             print(f"[DEBUG] 검색 결과 인덱스: {I}, 거리: {D}")
         except Exception as e:
             print(f"[ERROR] FAISS 검색 중 오류 발생: {e}")
