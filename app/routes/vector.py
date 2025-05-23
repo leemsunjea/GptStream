@@ -59,6 +59,7 @@ async def process_pdf(task_id: str, file_path: str, filename: str, session, logs
                         logs.append(f"임베딩 오류: {emb}")
                         continue
                     if isinstance(emb, np.ndarray):
+                        print(f"임베딩 데이터 (페이지 {i+1}, 문단 {j+1}): {emb[:5]}...")  # 일부 데이터 출력
                         batch.append({"document_id": doc_id, "embedding": emb.tobytes()})
                 if batch:
                     stmt = insert(embeddings)  # 수정된 부분

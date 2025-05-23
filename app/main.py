@@ -22,7 +22,9 @@ async def on_startup():
         async with session.begin():
             await session.execute(embeddings.delete())            
             await session.execute(documents.delete())
+    await load_faiss_and_docstore()
     print("✅ DB 초기화 완료")
+    print("✅ FAISS 인덱스 및 문서 저장소 초기화 완료")
 
 # DB 의존성
 async def get_db():

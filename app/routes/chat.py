@@ -26,7 +26,14 @@ async def chat_stream(request: Request):
     referenced_docs = []
     if index.ntotal > 0:
         query_embedding = await get_embedding(message)
-        D, I = index.search(np.array([query_embedding]), k=7)  # 상위 3개 문서 검색
+        if query_embedding is None:
+            print("쿼리 임베딩 생성 실패")
+            return StreamingResponse(event_stream(), media_type="text/event-stream")
+        
+        print(f"FAISS 인덱스 벡터 개수: {index.ntotal}")
+        D, I = index.search(np.array([query_embedding]), k=7)  # 상위 7개 문서 검색
+        print(f"검색 결과: {I}, 거리: {D}")
+        
         if I is not None and len(I[0]) > 0:
             referenced_docs = [doc_store[i] for i in I[0] if i >= 0 and i < len(doc_store)]
         if referenced_docs:
