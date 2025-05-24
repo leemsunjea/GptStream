@@ -352,36 +352,36 @@
 </head>
 
 <body>
-  <div class="chat-container">
+  <div class="chat-container" id="chat-container-main">
     <div class="chat-header">
       <svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
         <circle cx="12" cy="12" r="10" />
       </svg>
       <small>저희 챗봇과 대화하세요!</small>
     </div>
-    <div class="chat-body">
+    <div class="chat-body" id="chat-body-main">
       <div class="message bot">안녕하세요! 무엇을 도와드릴까요?</div>
     </div>
     <div class="pdf-upload">
-      <input type="file" id="pdfInput" accept="application/pdf" style="display: none;" />
-      <button id="uploadPdfBtn">PDF 업로드</button>
+      <input type="file" id="pdfInput-main" accept="application/pdf" style="display: none;" />
+      <button id="uploadPdfBtn-main">PDF 업로드</button>
     </div>
     <div class="chat-input">
       <div class="input-wrapper">
-        <input type="text" id="chat-input-field" placeholder="메시지를 입력해주세요.">
-        <button class="send-icon" id="sendButton">→</button>
+        <input type="text" id="chat-input-field-main" placeholder="메시지를 입력해주세요.">
+        <button class="send-icon" id="sendButton-main">→</button>
       </div>
     </div>
   </div>
 
-  <div class="chat-container">
+  <div class="chat-container" id="chat-container-alt">
     <div class="chat-header">
       <svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
         <circle cx="12" cy="12" r="10" />
       </svg>
       <small>챗봇 프롬프트를 추가해보세요!</small>
     </div>
-    <div class="chat-body">
+    <div class="chat-body" id="chat-body-alt">
     </div>
     <div class="chat-input">
       <div class="input-wrapper">
@@ -405,11 +405,11 @@
   <script>
     document.addEventListener("DOMContentLoaded", function () {
       const API_BASE = window.location.origin;
-      const input = document.getElementById("chat-input-field");
-      const chatBox = document.getElementById("chat-body");
-      const sendButton = document.getElementById("sendButton");
-      const uploadButton = document.getElementById("uploadPdfBtn");
-      const fileInput = document.getElementById("pdfInput");
+      const input = document.getElementById("chat-input-field-main");
+      const chatBox = document.getElementById("chat-body-main");
+      const sendButton = document.getElementById("sendButton-main");
+      const uploadButton = document.getElementById("uploadPdfBtn-main");
+      const fileInput = document.getElementById("pdfInput-main");
       let lastBotDiv = null;
       let partial = "";
 
@@ -611,7 +611,7 @@
       const altInput = document.getElementById("chat-input-field-alt");
       const altSendButton = document.getElementById("sendButton-alt");
       const altChatBody = document.getElementById("chat-body-alt");
-      const mainChatBody = document.getElementById("chat-body");
+      const mainChatBody = document.getElementById("chat-body-main");
 
       // 프롬프트 추가 함수
       function appendAltMessage(message) {
