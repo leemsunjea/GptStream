@@ -7,7 +7,7 @@
   <style>
     /* Global Styles */
     :root {
-      --primary-color: #000000;
+      --primary-color: #007bff;
       --secondary-color: #6c757d;
       --background-color: #f8f9fa;
       --card-background: #ffffff;
@@ -98,6 +98,18 @@
       background: transparent;
     }
 
+    /* Input field text color */
+    #chat-input-field,
+    #chat-input-field-alt {
+      color: #000000 !important; /* 검정색 텍스트 */
+    }
+    
+    /* Placeholder text color */
+    #chat-input-field::placeholder,
+    #chat-input-field-alt::placeholder {
+      color: #666666 !important; /* 어두운 회색 플레이스홀더 */
+    }
+
     .chat-body::-webkit-scrollbar-thumb {
       background-color: var(--border-color);
       border-radius: 4px;
@@ -166,7 +178,7 @@
     }
 
     .input-wrapper input:focus {
-      color: var(--primary-color);
+      color: #000000 !important; /* 검정색 텍스트 유지 */
     }
 
     .send-icon {
@@ -314,7 +326,7 @@
 
     #chat-header-alt small {
       display: block;
-      font-size: 14px;
+      font-size: 12px;
       color: #666;
     }
 
