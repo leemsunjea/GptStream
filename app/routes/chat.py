@@ -54,7 +54,10 @@ async def chat_stream(request: Request):
     context_text = "\n\n".join(referenced_docs) if referenced_docs else ""
 
     # 개선된 시스템 프롬프트
-    new_system_prompt = data.get("new_system_prompt", "")  # 사용자로부터 받은 새로운 시스템 프롬프트
+    # 아래 코드로 대체:
+    global new_system_prompt
+    if 'new_system_prompt' not in globals():
+        new_system_prompt = ""  # 사용자로부터 받은 새로운 시스템 프롬프트
 
     # 이전 대화 기록을 가져오기 위한 전역 변수
     global chat_history
@@ -70,7 +73,7 @@ async def chat_stream(request: Request):
             "만약 내용이 질문에 답변하기에 충분하지 않다면, 그 사실을 명시하세요. "
             "또한 답변에 사용된 문서의 특정 부분을 반드시 언급하세요.\n\n"
             "문서 내용:\n" + context_text + "\n\n"
-            "추가된 시스템 프롬프트:\n" + new_system_prompt + "\n\n"
+            "" + new_system_prompt + ""
             "답변에서 줄바꿈은 '\n'으로 표시하세요."
         )
     else:
