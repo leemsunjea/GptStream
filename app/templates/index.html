@@ -452,30 +452,7 @@
         logBody.scrollTop = logBody.scrollHeight;
       }
 
-      // 사용자 UUID 생성 및 저장
-      let userId = localStorage.getItem("userId");
-      if (!userId) {
-        userId = crypto.randomUUID();
-        localStorage.setItem("userId", userId);
-      }
-
-      // 챗봇 질문 보내기
-      async function sendChat(message) {
-        const response = await fetch("/chat", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-user-id": userId, // 사용자 식별용
-          },
-          body: JSON.stringify({ message })
-        });
-
-        const data = await response.json();
-        console.log("응답:", data.reply);
-        appendMessage("bot", data.reply); // 응답 메시지 추가
-      }
-
-      // 기존 sendMessage 함수 수정
+      // 챗봇 메시지 전송 함수
       async function sendMessage() {
         const message = input.value.trim();
         if (!message) return;
@@ -483,12 +460,32 @@
         appendMessage("user", message);
         input.value = "";
         sendButton.style.display = "none";
+        partial = "";
+        lastBotDiv = null;
+
+        let userId = localStorage.getItem("userId");
+        if (!userId) {
+          userId = crypto.randomUUID();
+          localStorage.setItem("userId", userId);
+        }
 
         try {
-          await sendChat(message); // sendChat 호출
+          const response = await fetch(`${API_BASE}/chat`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-user-id": userId, // 사용자 식별용
+            },
+            body: JSON.stringify({ message: message })
+          });
+
+          const data = await response.json();
+          console.log("응답:", data.reply);
+          appendMessage("bot", data.reply); // 응답 메시지 추가
         } catch (err) {
           console.error("전송 오류:", err);
           appendMessage("bot", "오류가 발생했습니다. 다시 시도해주세요.");
+          appendSystemLog(`메시지 전송 오류: ${err.message}`);
         } finally {
           sendButton.style.display = "";
         }

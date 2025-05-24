@@ -18,9 +18,20 @@ openai.api_key = settings.OPENAI_API_KEY
 client = OpenAI(api_key=settings.OPENAI_API_KEY)
 
 @router.post("/chat/stream")
-async def chat_stream(request: Request):
+async def chat_stream(request: Request, x_user_id: str = Header(..., description="클라이언트 UUID")):
     data = await request.json()
     message = data.get("message", "")
+
+    # 사용자별 대화 기록 관리
+    async with async_session() as session:
+        # 이전 대화 기록 불러오기
+        previous_chats = await session.execute(
+            ChatHistory.select().where(ChatHistory.user_id == x_user_id).order_by(ChatHistory.created_at)
+        )
+        chat_history = [
+            {"role": "user", "content": chat.user_message} if chat.bot_response == "" else {"role": "assistant", "content": chat.bot_response}
+            for chat in previous_chats.scalars()
+        ]
 
     # 🔍 질문을 벡터화하고 관련 문단 검색
     context_text = ""
@@ -61,12 +72,12 @@ async def chat_stream(request: Request):
         new_system_prompt = ""  # 사용자로부터 받은 새로운 시스템 프롬프트
 
     # 이전 대화 기록을 가져오기 위한 전역 변수
-    global chat_history
-    if 'chat_history' not in globals():
-        chat_history = []
+    # global chat_history
+    # if 'chat_history' not in globals():
+    #     chat_history = []
 
     # 이전 대화 기록 추가
-    chat_history.append({"role": "user", "content": message})
+    # chat_history.append({"role": "user", "content": message})
 
     if context_text or new_system_prompt:
         system_prompt = (
@@ -107,17 +118,10 @@ async def chat_stream(request: Request):
             # 봇 응답을 대화 기록에 추가
             chat_history.append({"role": "assistant", "content": full_response})
 
-            # 참조 문서 출력
-            if referenced_docs:
-                yield f"\n\ndata: [참고한 문단]\n\n"
-                for idx, doc in enumerate(referenced_docs, 1):
-                    yield f"data: [문단 {idx}]\n{doc}\n\n"
-
-            yield "data: \n\n[DONE]\n\n"
-
             # DB 저장
             async with async_session() as session:
                 chat = ChatHistory(
+                    user_id=x_user_id,  # 사용자 ID 저장
                     user_message=message,
                     bot_response=full_response
                 )
@@ -150,30 +154,31 @@ async def add_prompt(request: Request):
 
     return {"success": True, "chatHistory": new_system_prompt}
 
-@router.post("/chat")
-async def chat(
-    request: Request,
-    x_user_id: str = Header(..., description="클라이언트 UUID")
-):
-    data = await request.json()
-    message = data.get("message", "")
+# @router.post("/chat")
+# async def chat(
+#     request: Request,
+#     x_user_id: str = Header(..., description="클라이언트 UUID")
+# ):
+#     data = await request.json()
+#     message = data.get("message", "")
 
-    # 사용자별 대화 기록 관리
-    async with async_session() as session:
-        # 사용자 메시지 저장
-        user_message = ChatHistory(
-            user_message=message,
-            bot_response="",  # 봇 응답은 이후에 업데이트
-            created_at=func.now()
-        )
-        session.add(user_message)
-        await session.commit()
+#     # 사용자별 대화 기록 관리
+#     async with async_session() as session:
+#         # 사용자 메시지 저장
+#         user_message = ChatHistory(
+#             user_id=x_user_id,  # 사용자 ID 저장
+#             user_message=message,
+#             bot_response="",  # 봇 응답은 이후에 업데이트
+#             created_at=func.now()
+#         )
+#         session.add(user_message)
+#         await session.commit()
 
-        # 봇 응답 생성 (예시: echo)
-        bot_response = f"너가 말한 건 '{message}' 이구나!"
+#         # 봇 응답 생성 (예시: echo)
+#         bot_response = f"너가 말한 건 '{message}' 이구나!"
 
-        # 봇 응답 업데이트
-        user_message.bot_response = bot_response
-        await session.commit()
+#         # 봇 응답 업데이트
+#         user_message.bot_response = bot_response
+#         await session.commit()
 
-    return {"reply": bot_response}
+#     return {"reply": bot_response}
