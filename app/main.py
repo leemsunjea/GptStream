@@ -42,26 +42,27 @@ async def startup_event():
         await conn.run_sync(Base.metadata.create_all)
         print("데이터베이스 테이블 생성 완료")
 
-    # 기본 시스템 프롬프트 추가
+    # 기본 시스템 프롬프트 추가 (단일 항목만 보장)
     async with async_session() as session:
-        for prompt_text in DEFAULT_SYSTEM_PROMPTS:
-            # 이미 해당 프롬프트가 있는지 확인 (user_id='default_system' 및 내용으로)
-            existing_prompt_result = await session.execute(
-                select(UserPreference).where(
-                    UserPreference.user_id == "default_system",
-                    UserPreference.system_prompt == prompt_text
-                )
-            )
-            existing_prompt = existing_prompt_result.scalars().first()
+        # 'default_system' ID로 이미 프롬프트가 있는지 확인
+        stmt = select(UserPreference).where(UserPreference.user_id == "default_system")
+        result = await session.execute(stmt)
+        existing_default_user_pref = result.scalars().first()
 
-            if not existing_prompt:
-                default_prompt = UserPreference(
-                    user_id="default_system", 
-                    system_prompt=prompt_text
+        if not existing_default_user_pref:
+            if DEFAULT_SYSTEM_PROMPTS: # 목록에 프롬프트가 있는지 확인
+                # 첫 번째 프롬프트를 기본값으로 추가
+                default_prompt_entry = UserPreference(
+                    user_id="default_system",
+                    system_prompt=DEFAULT_SYSTEM_PROMPTS[0] # 첫 번째 프롬프트를 사용
                 )
-                session.add(default_prompt)
-                print(f"기본 시스템 프롬프트 추가: '{prompt_text}'")
-        await session.commit()
+                session.add(default_prompt_entry)
+                await session.commit()
+                print(f"기본 시스템 프롬프트 ('{DEFAULT_SYSTEM_PROMPTS[0]}') 추가 완료.")
+            else:
+                print("DEFAULT_SYSTEM_PROMPTS 목록이 비어 있어, 기본 시스템 프롬프트를 추가할 수 없습니다.")
+        else:
+            print(f"기존 기본 시스템 프롬프트 ('{existing_default_user_pref.system_prompt}')가 이미 존재합니다. 추가 작업을 건너뜁니다.")
 
 # DB 의존성
 async def get_db():
