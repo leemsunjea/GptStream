@@ -33,6 +33,16 @@ async def chat_stream(request: Request, x_user_id: str = Header(..., description
             for chat in previous_chats.scalars()
         ]
 
+        # 새로운 메시지 저장
+        new_chat = ChatHistory(
+            user_id=x_user_id,
+            user_message=message,
+            bot_response="",  # 봇 응답은 이후에 업데이트
+            created_at=func.now()
+        )
+        session.add(new_chat)
+        await session.commit()
+
     # 🔍 질문을 벡터화하고 관련 문단 검색
     context_text = ""
     referenced_docs = []
