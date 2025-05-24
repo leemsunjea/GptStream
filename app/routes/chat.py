@@ -6,7 +6,7 @@ from fastapi.responses import StreamingResponse
 import openai
 import numpy as np
 from app.config import settings
-from db.models import ChatHistory
+from db.models import ChatHistory, UserPreference # UserPreference 임포트 추가
 from db.database import async_session
 from app.vector_db import get_embedding_async as get_embedding, index, doc_store  # vector 연동
 from openai import OpenAI
@@ -20,11 +20,23 @@ client = OpenAI(api_key=settings.OPENAI_API_KEY)
 @router.post("/chat/stream")
 async def chat_stream(request: Request, x_user_id: str = Header(..., description="클라이언트 UUID")):
     data = await request.json()
-    message = data.get("message", "")  # 현재 사용자의 메시지
+    message = data.get("message", "")
 
-    # 1. 이전 대화 기록을 불러와 OpenAI에 전달할 형식으로 구성
     openai_chat_history_list = []
+    user_system_prompt = "" # 사용자별 시스템 프롬프트를 저장할 변수
+
     async with async_session() as session:
+        # 사용자별 시스템 프롬프트 조회
+        user_pref_result = await session.execute(
+            select(UserPreference).where(UserPreference.user_id == x_user_id)
+        )
+        user_pref = user_pref_result.scalars().first()
+        if user_pref and user_pref.system_prompt:
+            user_system_prompt = user_pref.system_prompt
+        else:
+            # 기본 시스템 프롬프트 또는 빈 문자열 설정
+            user_system_prompt = "You are a helpful assistant." 
+
         previous_chats_result = await session.execute(
             select(ChatHistory)
             .where(ChatHistory.user_id == x_user_id)
@@ -79,26 +91,25 @@ async def chat_stream(request: Request, x_user_id: str = Header(..., description
         print("[DEBUG] 인덱스에 문서가 없습니다.")
     context_text = "\n\n".join(referenced_docs) if referenced_docs else ""
 
-    # 4. 시스템 프롬프트 설정 (기존 로직 유지, new_system_prompt는 전역 변수)
-    global new_system_prompt
-    if 'new_system_prompt' not in globals():
-        new_system_prompt = ""
+    # 4. 시스템 프롬프트 설정 (사용자별 프롬프트 사용)
+    context_text = "\\n\\n".join(referenced_docs) if referenced_docs else ""
 
-    if context_text or new_system_prompt:
+    # 전역 new_system_prompt 대신 user_system_prompt 사용
+    if context_text or user_system_prompt: # new_system_prompt 대신 user_system_prompt 사용
         system_prompt = (
             "다음은 사용자가 업로드한 문서에서 검색된 내용입니다. 이 내용을 기반으로 사용자의 질문에 답변해주세요. "
             "만약 내용이 질문에 답변하기에 충분하지 않다면, 그 사실을 명시하세요. "
-            "또한 답변에 사용된 문서의 특정 부분을 반드시 언급하세요.\n\n"
-            "문서 내용:\n" + context_text + "\n\n"
-            "" + new_system_prompt + ""
-            "답변에서 줄바꿈은 '\\n'으로 표시하세요."
+            "또한 답변에 사용된 문서의 특정 부분을 반드시 언급하세요.\\n\\n"
+            "문서 내용:\\n" + context_text + "\\n\\n"
+            "\"" + user_system_prompt + "\"\\n\\n" # new_system_prompt 대신 user_system_prompt 사용
+            "답변에서 줄바꿈은 '\\\\n'으로 표시하세요."
         )
     else:
         system_prompt = (
             "업로드된 문서가 없으니 일반 챗봇처럼 답변해주세요. "
-            "답변에서 줄바꿈은 '\\n'으로 표시하세요."
-            "문서 내용:\n" + context_text + "\n\n" # context_text는 비어있을 수 있음
-            "추가된 시스템 프롬프트:\n" + new_system_prompt + "\n\n" # new_system_prompt는 비어있을 수 있음
+            "답변에서 줄바꿈은 '\\\\n'으로 표시하세요.\\n"
+            # "문서 내용:\\n" + context_text + "\\n\\n" # context_text는 비어있으므로 제거 가능
+            "추가된 시스템 프롬프트:\\n" + user_system_prompt + "\\n\\n" # new_system_prompt 대신 user_system_prompt 사용
         )
 
     messages_to_send_to_openai = [{"role": "system", "content": system_prompt}] + openai_chat_history_list
@@ -145,20 +156,33 @@ async def chat_stream(request: Request, x_user_id: str = Header(..., description
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 @router.post("/chat/add_prompt")
-async def add_prompt(request: Request):
+async def add_prompt(request: Request, x_user_id: str = Header(..., description="클라이언트 UUID")): # x_user_id 추가
     data = await request.json()
-    new_prompt = data.get("prompt", "")
+    new_prompt_text = data.get("prompt", "") # 변수명 변경 new_prompt -> new_prompt_text
 
-    if not new_prompt:
+    if not new_prompt_text: # 변수명 변경 new_prompt -> new_prompt_text
         return {"error": "프롬프트가 비어 있습니다."}
 
-    # 새로운 시스템 프롬프트를 전역 변수로 저장
-    global new_system_prompt
-    previous_prompt = new_system_prompt if 'new_system_prompt' in globals() else "(없음)"
-    new_system_prompt = new_prompt
+    async with async_session() as session:
+        # 기존 사용자 프롬프트 확인
+        user_pref_result = await session.execute(
+            select(UserPreference).where(UserPreference.user_id == x_user_id)
+        )
+        user_pref = user_pref_result.scalars().first()
 
-    # 로그 출력
-    print("[DEBUG] 이전 프롬프트:", previous_prompt)
-    print("[DEBUG] 새로운 프롬프트:", new_system_prompt)
+        if user_pref:
+            # 기존 프롬프트 업데이트
+            previous_prompt = user_pref.system_prompt
+            user_pref.system_prompt = new_prompt_text
+            user_pref.updated_at = func.now() # 업데이트 시간 기록
+            print(f"[DEBUG] 사용자 {x_user_id}의 프롬프트 업데이트: '{previous_prompt}' -> '{new_prompt_text}'")
+        else:
+            # 새 프롬프트 생성
+            user_pref = UserPreference(user_id=x_user_id, system_prompt=new_prompt_text)
+            session.add(user_pref)
+            print(f"[DEBUG] 사용자 {x_user_id}의 새 프롬프트 생성: '{new_prompt_text}'")
+        
+        await session.commit()
+        await session.refresh(user_pref) # DB에서 최신 정보로 객체 업데이트
 
-    return {"success": True, "chatHistory": new_system_prompt}
+    return {"success": True, "new_system_prompt": user_pref.system_prompt} # 반환값 키 변경 및 값 수정

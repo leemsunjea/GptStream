@@ -1,6 +1,9 @@
 # models.py
-from sqlalchemy import Column, Integer, Text, DateTime, func, Table, String, ForeignKey, LargeBinary, MetaData
-from db.database import Base  # 수정: db에서가 아니라 db.database에서 import
+from sqlalchemy import Column, Integer, String, DateTime, Text, ForeignKey, LargeBinary, Table, MetaData # Table, MetaData, LargeBinary 추가
+from sqlalchemy.orm import declarative_base, relationship
+from sqlalchemy.sql import func
+
+Base = declarative_base()
 
 class ChatHistory(Base):
     __tablename__ = "chat_history"
@@ -29,3 +32,22 @@ embeddings = Table(
     Column("document_id", Integer, ForeignKey("documents.id")),
     Column("embedding", LargeBinary),
 )
+
+class UserPreference(Base):
+    __tablename__ = "user_preferences"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(String, unique=True, index=True, nullable=False)
+    system_prompt = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    def __repr__(self):
+        return f"<UserPreference(user_id='{self.user_id}', system_prompt='{self.system_prompt[:20]}...')>"
+
+# ChatHistory 모델에 user_id 외래 키 제약 조건 및 관계 설정 (선택 사항이지만 권장)
+# class ChatHistory(Base):
+#     __tablename__ = "chat_history"
+#     # ... 기존 컬럼들 ...
+#     user_id = Column(String, ForeignKey("user_preferences.user_id"), nullable=False) # ForeignKey 추가
+#     user = relationship("UserPreference") # 관계 설정
