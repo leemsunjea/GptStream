@@ -650,7 +650,7 @@
           const chatHistory = result.chatHistory;
 
           // 프롬프트 추가
-          appendAltMessage(`프롬프트가 추가되었습니다: ${message}\n이전 내역:\n${chatHistory}`);
+          appendAltMessage(`프롬프트가 추가되었습니다: ${message}\n\n이전 내역:\n${chatHistory}`);
         } catch (error) {
           console.error("프롬프트 추가 오류:", error);
           appendAltMessage("프롬프트 추가 중 오류가 발생했습니다.");

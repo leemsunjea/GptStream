@@ -98,6 +98,7 @@ async def chat_stream(request: Request):
             for chunk in response:
                 content = getattr(chunk.choices[0].delta, "content", None)
                 if content:
+                    print(f"[DEBUG] 응답 내용: {content}")  # 디버깅용 로그 추가
                     full_response += content
                     yield f"data: {content}\n\n"
                     await asyncio.sleep(0)
