@@ -16,15 +16,19 @@ documents = Table(
     "documents",
     metadata,
     Column("id", Integer, primary_key=True),
-    Column("pdf_name", String),
-    Column("page_number", Integer),
-    Column("content", Text),
+    Column("session_id", String(64), nullable=False, index=True),  # 세션 ID 추가
+    Column("pdf_name", String(255), nullable=False),  # NOT NULL 제약조건 추가
+    Column("page_number", Integer, nullable=False),   # NOT NULL 제약조건 추가
+    Column("content", Text, nullable=False),          # NOT NULL 제약조건 추가
+    Column("created_at", DateTime, server_default=func.now()),  # 생성일시 추가
 )
 
 embeddings = Table(
     "embeddings",
     metadata,
     Column("id", Integer, primary_key=True),
-    Column("document_id", Integer, ForeignKey("documents.id")),
-    Column("embedding", LargeBinary),
+    Column("document_id", Integer, ForeignKey("documents.id", ondelete="CASCADE"), nullable=False),
+    Column("session_id", String(64), nullable=False, index=True),  # 세션 ID 추가
+    Column("embedding", LargeBinary, nullable=False),  # NOT NULL 제약조건 추가
+    Column("created_at", DateTime, server_default=func.now()),  # 생성일시 추가
 )

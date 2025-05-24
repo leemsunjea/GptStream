@@ -3,3 +3,9 @@ __pycache__/
 .env
 .vscode/
 venv/
+alembic/
+alembic.ini
+alembic/
+alembic/versions/
+alembic/script.py.mako
+alembic/env.py
