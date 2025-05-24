@@ -73,11 +73,6 @@ async def chat_stream(request: Request):
             "추가된 시스템 프롬프트:\n" + new_system_prompt + "\n\n"
             "답변에서 줄바꿈은 '\n'으로 표시하세요."
         )
-    else:
-        system_prompt = (
-            "업로드된 문서가 없으니 일반 챗봇처럼 답변해주세요. "
-            "답변에서 줄바꿈은 '\n'으로 표시하세요."
-        )
 
     # 이전 대화 기록을 시스템 메시지에 추가
     messages = [{"role": "system", "content": system_prompt}] + chat_history
