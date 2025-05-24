@@ -5,106 +5,153 @@
   <meta charset="UTF-8">
   <title>스트리밍 챗봇</title>
   <style>
-    /* 채팅 버튼 및 팝업창 관련 스타일 */
-    #chat-popup {
-      position: static;
+    /* Global Styles */
+    :root {
+      --primary-color: #007bff;
+      --secondary-color: #6c757d;
+      --background-color: #f8f9fa;
+      --card-background: #ffffff;
+      --border-color: #dee2e6;
+      --shadow-color: rgba(0, 0, 0, 0.1);
+      --transition-duration: 0.3s;
+    }
+
+    * {
       margin: 0;
-      width: 430px;
-      height: 705px;
-      background-color: #fff;
-      border-radius: 30px;
-      box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3);
-      opacity: 1;
-      transition: opacity 0.3s ease, transform 0.3s ease;
-      z-index: 999;
-      pointer-events: auto;
+      padding: 0;
+      box-sizing: border-box;
     }
 
-    #chat-popup.show {
-      opacity: 1;
-      transform: translateY(0);
-      pointer-events: auto;
-    }
-
-    #chat-button {
-      position: fixed;
-      bottom: 20px;
-      right: 50px;
-      width: 60px;
-      height: 60px;
-      border-radius: 50%;
-      background-color: #007bff;
-      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
-      cursor: pointer;
-      transition: transform 0.3s ease;
-      z-index: 1000;
-    }
-
-    #chat-button:hover {
-      transform: scale(1.1);
-    }
-
-    #chat-button img {
-      width: 100%;
-      height: 100%;
-      border-radius: 50%;
-    }
-
-    #chat-header {
-      background-color: transparent;
+    body {
+      min-height: 100vh;
+      background-color: var(--background-color);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      margin: 20px;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(430px, 1fr));
+      gap: 30px;
       padding: 20px;
-      font-size: 16px;
-      text-align: center;
-      border-bottom: 1px solid #ddd;
     }
 
-    #chat-svg {
-      margin-bottom: 0.5px;
+    /* Chat Container Styles */
+    .chat-container {
+      width: 100%;
+      max-width: 430px;
+      height: 705px;
+      background-color: var(--card-background);
+      border-radius: 20px;
+      box-shadow: 0 8px 24px var(--shadow-color);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      transition: all var(--transition-duration);
     }
 
-    #chat-header small {
-      display: block;
-      font-size: 12px;
-      color: #666;
+    /* Header Styles */
+    .chat-header {
+      padding: 20px;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      cursor: pointer;
     }
 
-    #chat-body {
-      padding: 10px;
-      height: calc(95% - 190px);
+    .chat-header svg {
+      width: 24px;
+      height: 24px;
+      fill: var(--primary-color);
+      transition: transform var(--transition-duration);
+    }
+
+    .chat-header:hover svg {
+      transform: rotate(10deg);
+    }
+
+    .chat-header small {
+      font-size: 14px;
+      color: var(--secondary-color);
+      transition: color var(--transition-duration);
+    }
+
+    .chat-header:hover small {
+      color: var(--primary-color);
+    }
+
+    /* Body Styles */
+    .chat-body {
+      flex: 1;
+      padding: 20px;
       overflow-y: auto;
       display: flex;
       flex-direction: column;
+      gap: 15px;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border-color) transparent;
     }
 
+    .chat-body::-webkit-scrollbar {
+      width: 8px;
+    }
+
+    .chat-body::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    .chat-body::-webkit-scrollbar-thumb {
+      background-color: var(--border-color);
+      border-radius: 4px;
+    }
+
+    /* Message Styles */
     .message {
-      padding: 10px;
-      margin: 5px;
-      border-radius: 10px;
-      max-width: 80%;
+      max-width: 85%;
+      padding: 12px 16px;
+      border-radius: 12px;
+      font-size: 14px;
+      line-height: 1.4;
+      word-wrap: break-word;
+      transition: all var(--transition-duration);
     }
 
     .message.bot {
-      background-color: #e9ecef;
+      background-color: #f8f9fa;
       align-self: flex-start;
+      border-bottom-left-radius: 4px;
     }
 
     .message.user {
-      background-color: #007bff;
-      color: #fff;
+      background-color: var(--primary-color);
+      color: white;
       align-self: flex-end;
+      border-bottom-right-radius: 4px;
     }
 
-    #chat-input {
-      padding: 10px;
-      border-top: 1px solid #ddd;
+    /* Input Section Styles */
+    .chat-input {
+      padding: 15px;
+      border-top: 1px solid var(--border-color);
+      background-color: #f8f9fa;
+      transition: background-color var(--transition-duration);
+    }
+
+    .chat-input:hover {
+      background-color: #f5f5f5;
     }
 
     .input-wrapper {
       display: flex;
       align-items: center;
-      background: #f1f1f1;
-      border-radius: 30px;
-      padding: 5px 10px;
+      gap: 10px;
+      background: white;
+      border-radius: 25px;
+      padding: 10px 15px;
+      box-shadow: 0 2px 4px var(--shadow-color);
+      transition: all var(--transition-duration);
+    }
+
+    .input-wrapper:hover {
+      box-shadow: 0 4px 8px var(--shadow-color);
     }
 
     .input-wrapper input {
@@ -112,94 +159,121 @@
       border: none;
       background: transparent;
       outline: none;
-      font-size: 16px;
-      padding: 10px;
+      font-size: 15px;
+      padding: 8px 0;
+      color: #212529;
+      transition: color var(--transition-duration);
+    }
+
+    .input-wrapper input:focus {
+      color: var(--primary-color);
     }
 
     .send-icon {
       cursor: pointer;
       background: none;
       border: none;
-      font-size: 20px;
+      font-size: 18px;
+      color: var(--primary-color);
+      transition: all var(--transition-duration);
     }
 
-    #pdf-upload {
+    .send-icon:hover {
+      transform: scale(1.1);
+      color: #0056b3;
+    }
+
+    /* PDF Upload Section */
+    .pdf-upload {
+      padding: 15px;
+      border-top: 1px solid var(--border-color);
+      background-color: #f8f9fa;
       display: flex;
       align-items: center;
       gap: 10px;
-      background: #f9f9f9;
-      border-top: 1px solid #ddd;
-      padding: 10px 15px;
+      transition: background-color var(--transition-duration);
     }
 
-    #pdf-upload input[type="file"] {
+    .pdf-upload:hover {
+      background-color: #f5f5f5;
+    }
+
+    .pdf-upload input[type="file"] {
       flex: 1;
       font-size: 14px;
+      padding: 8px;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      outline: none;
+      transition: all var(--transition-duration);
     }
 
-    #uploadPdfBtn {
+    .pdf-upload input[type="file"]:hover {
+      border-color: var(--primary-color);
+    }
+
+    .pdf-upload button {
       padding: 8px 16px;
-      background-color: #007bff;
+      background-color: var(--primary-color);
       color: white;
       border: none;
       border-radius: 20px;
       cursor: pointer;
       font-size: 14px;
-      transition: background-color 0.2s ease;
+      transition: all var(--transition-duration);
     }
 
-    #uploadPdfBtn:hover {
+    .pdf-upload button:hover {
       background-color: #0056b3;
+      transform: translateY(-1px);
+      box-shadow: 0 2px 4px var(--shadow-color);
     }
 
-    #system-log-popup {
-      position: static;
-      margin: 0;
-      width: 430px;
+    /* System Log Styles */
+    .system-log {
+      width: 100%;
+      max-width: 430px;
       height: 705px;
-      background-color: #fff;
-      border-radius: 30px;
-      box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3);
-      opacity: 1;
-      transition: opacity 0.3s ease, transform 0.3s ease;
-      z-index: 998;
-      pointer-events: auto;
-      left: unset;
+      background-color: var(--card-background);
+      border-radius: 20px;
+      box-shadow: 0 8px 24px var(--shadow-color);
+      overflow: hidden;
+      transition: all var(--transition-duration);
     }
 
-    #system-log-body {
-      padding: 10px;
-      height: 80%;
-      max-height: 80%;
+    .system-log:hover {
+      box-shadow: 0 12px 32px var(--shadow-color);
+    }
+
+    .system-log-body {
+      padding: 20px;
+      height: calc(100% - 60px);
       overflow-y: auto;
-      overflow-x: hidden;
-      display: flex;
-      flex-direction: column;
-      font-size: 15px;
+      font-size: 13px;
       color: #333;
       scrollbar-width: thin;
-      scrollbar-color: #bbb #f3f3f3;
+      scrollbar-color: var(--border-color) transparent;
     }
 
-    #system-log-body::-webkit-scrollbar {
+    .system-log-body::-webkit-scrollbar {
       width: 8px;
-      background: #f3f3f3;
-      border-radius: 8px;
     }
 
-    #system-log-body::-webkit-scrollbar-thumb {
-      background: #bbb;
-      border-radius: 8px;
+    .system-log-body::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    .system-log-body::-webkit-scrollbar-thumb {
+      background-color: var(--border-color);
+      border-radius: 4px;
     }
 
     .system-log-message {
       padding: 10px;
-      margin: 5px;
-      border-radius: 10px;
-      background-color: #f3f3f3;
-      color: #222;
+      margin: 5px 0;
+      background-color: #f8f9fa;
+      border-radius: 8px;
       font-family: monospace;
-      max-width: 90%;
       word-break: break-all;
     }
 
@@ -273,29 +347,26 @@
       cursor: pointer;
       background: none;
       border: none;
-      font-size: 20px;
     }
   </style>
 </head>
 
 <body>
-  <div id="chat-popup">
-    <div id="chat-header">
-      <div id="chat-svg">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="#007bff" xmlns="http://www.w3.org/2000/svg">
-          <circle cx="12" cy="12" r="10" />
-        </svg>
-      </div>
+  <div class="chat-container">
+    <div class="chat-header">
+      <svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="12" cy="12" r="10" />
+      </svg>
       <small>저희 챗봇과 대화하세요!</small>
     </div>
-    <div id="chat-body">
+    <div class="chat-body">
       <div class="message bot">안녕하세요! 무엇을 도와드릴까요?</div>
     </div>
-    <div id="pdf-upload" style="padding: 10px; border-top: 1px solid #ddd;">
+    <div class="pdf-upload">
       <input type="file" id="pdfInput" accept="application/pdf" style="display: none;" />
       <button id="uploadPdfBtn">PDF 업로드</button>
     </div>
-    <div id="chat-input">
+    <div class="chat-input">
       <div class="input-wrapper">
         <input type="text" id="chat-input-field" placeholder="메시지를 입력해주세요.">
         <button class="send-icon" id="sendButton">→</button>
@@ -303,36 +374,31 @@
     </div>
   </div>
 
-  <div id="chat-popup-alt">
-    <div id="chat-header-alt">
-      <div id="chat-svg-alt">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="#007bff" xmlns="http://www.w3.org/2000/svg">
-          <circle cx="12" cy="12" r="10" />
-        </svg>
-      </div>
+  <div class="chat-container">
+    <div class="chat-header">
+      <svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="12" cy="12" r="10" />
+      </svg>
       <small>챗봇 프롬프트를 추가해보세요!</small>
     </div>
-    <div id="chat-body-alt">
+    <div class="chat-body">
     </div>
-    <div id="chat-input-alt">
-      <div class="input-wrapper-alt">
+    <div class="chat-input">
+      <div class="input-wrapper">
         <input type="text" id="chat-input-field-alt" placeholder="메시지를 입력해주세요.">
-        <button class="send-icon-alt" id="sendButton-alt">→</button>
+        <button class="send-icon" id="sendButton-alt">→</button>
       </div>
     </div>
   </div>
 
-  <div id="system-log-popup">
-    <div id="chat-header">
-      <div id="chat-svg">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="#28a745" xmlns="http://www.w3.org/2000/svg">
-          <circle cx="12" cy="12" r="10" />
-        </svg>
-      </div>
+  <div class="system-log">
+    <div class="chat-header">
+      <svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="12" cy="12" r="10" />
+      </svg>
       <small>시스템 로그</small>
     </div>
-    <div id="system-log-body">
-      <!-- 시스템 로그 메시지가 여기에 출력됩니다 -->
+    <div class="system-log-body">
     </div>
   </div>
 
