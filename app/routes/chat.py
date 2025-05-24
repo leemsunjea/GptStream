@@ -34,8 +34,18 @@ async def chat_stream(request: Request, x_user_id: str = Header(..., description
         if user_pref and user_pref.system_prompt:
             user_system_prompt = user_pref.system_prompt
         else:
-            # 기본 시스템 프롬프트 또는 빈 문자열 설정
-            user_system_prompt = "You are a helpful assistant." 
+            # 사용자 정의 프롬프트가 없으면, 'default_system' 프롬프트를 조회
+            default_prompt_result = await session.execute(
+                select(UserPreference).where(UserPreference.user_id == "default_system").order_by(UserPreference.id) # 첫번째 기본 프롬프트를 가져오기 위해 정렬
+            )
+            default_prompt = default_prompt_result.scalars().first()
+            if default_prompt and default_prompt.system_prompt:
+                user_system_prompt = default_prompt.system_prompt
+                print(f"[DEBUG] 사용자 {x_user_id}에게 기본 시스템 프롬프트 적용: '{user_system_prompt}'")
+            else:
+                # DB에도 기본 프롬프트가 없으면 최후의 기본값 사용
+                user_system_prompt = "You are a helpful assistant." 
+                print(f"[DEBUG] 사용자 {x_user_id}에게 최후의 기본 시스템 프롬프트 적용: '{user_system_prompt}'")
 
         previous_chats_result = await session.execute(
             select(ChatHistory)
