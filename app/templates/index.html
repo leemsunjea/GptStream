@@ -463,14 +463,8 @@
         partial = "";
         lastBotDiv = null;
 
-        let userId = localStorage.getItem("userId");
-        if (!userId) {
-          userId = crypto.randomUUID();
-          localStorage.setItem("userId", userId);
-        }
-
         try {
-          const response = await fetch(`${API_BASE}/chat`, {
+          const response = await fetch(`${API_BASE}/chat/stream`, {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
@@ -478,10 +472,29 @@
             },
             body: JSON.stringify({ message: message })
           });
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder();
 
-          const data = await response.json();
-          console.log("응답:", data.reply);
-          appendMessage("bot", data.reply); // 응답 메시지 추가
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            const text = decoder.decode(value, { stream: true });
+            const lines = text.split("\n");
+            for (let line of lines) {
+              if (line.startsWith("data: ")) {
+                let content = line.slice(6);
+                content = content.replace(/\n/g, "<br>");
+                partial += content;
+                if (!lastBotDiv) {
+                  lastBotDiv = document.createElement("div");
+                  lastBotDiv.classList.add("message", "bot");
+                  chatBox.appendChild(lastBotDiv);
+                }
+                lastBotDiv.innerHTML = partial;
+                chatBox.scrollTop = chatBox.scrollHeight;
+              }
+            }
+          }
         } catch (err) {
           console.error("전송 오류:", err);
           appendMessage("bot", "오류가 발생했습니다. 다시 시도해주세요.");
