@@ -10,7 +10,7 @@ from db.models import ChatHistory
 from db.database import async_session
 from app.vector_db import get_embedding_async as get_embedding, index, doc_store  # vector 연동
 from openai import OpenAI
-from sqlalchemy import func
+from sqlalchemy import func, select
 
 router = APIRouter()
 
@@ -26,7 +26,7 @@ async def chat_stream(request: Request, x_user_id: str = Header(..., description
     async with async_session() as session:
         # 이전 대화 기록 불러오기
         previous_chats = await session.execute(
-            ChatHistory.select().where(ChatHistory.user_id == x_user_id).order_by(ChatHistory.created_at)
+            select(ChatHistory).where(ChatHistory.user_id == x_user_id).order_by(ChatHistory.created_at)
         )
         chat_history = [
             {"role": "user", "content": chat.user_message} if chat.bot_response == "" else {"role": "assistant", "content": chat.bot_response}
