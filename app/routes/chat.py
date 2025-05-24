@@ -54,12 +54,15 @@ async def chat_stream(request: Request):
     context_text = "\n\n".join(referenced_docs) if referenced_docs else ""
 
     # 개선된 시스템 프롬프트
-    if context_text:
+    custom_prompt = data.get("custom_prompt", "")  # 사용자로부터 받은 추가 프롬프트
+
+    if context_text or custom_prompt:
         system_prompt = (
             "다음은 사용자가 업로드한 문서에서 검색된 내용입니다. 이 내용을 기반으로 사용자의 질문에 답변해주세요. "
             "만약 내용이 질문에 답변하기에 충분하지 않다면, 그 사실을 명시하세요. "
             "또한 답변에 사용된 문서의 특정 부분을 반드시 언급하세요.\n\n"
             "문서 내용:\n" + context_text + "\n\n"
+            "추가된 프롬프트:\n" + custom_prompt + "\n\n"
             "답변에서 줄바꿈은 '\n'으로 표시하세요."
         )
     else:
@@ -111,3 +114,47 @@ async def chat_stream(request: Request):
             yield f"data: [ERROR] {str(e)}\n\n"
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+@router.post("/chat/add_prompt")
+async def add_prompt(request: Request):
+    data = await request.json()
+    new_prompt = data.get("prompt", "")
+
+    if not new_prompt:
+        return {"error": "프롬프트가 비어 있습니다."}
+
+    # 기존 프롬프트 가져오기
+    existing_prompts = [
+        "기본 프롬프트: 사용자가 업로드한 문서에서 검색된 내용을 기반으로 답변합니다.",
+        "업로드된 문서가 없을 경우 일반 챗봇처럼 답변합니다."
+    ]
+
+    # 새로운 프롬프트 추가
+    existing_prompts.append(new_prompt)
+
+    # 병합된 프롬프트 반환
+    merged_prompts = "\n".join(existing_prompts)
+
+    return {"success": True, "chatHistory": merged_prompts}
+
+@router.post("/chat/add_custom_prompt")
+async def add_custom_prompt(request: Request):
+    data = await request.json()
+    custom_prompt = data.get("custom_prompt", "")
+
+    if not custom_prompt:
+        return {"error": "추가할 프롬프트가 비어 있습니다."}
+
+    # 기존 프롬프트 가져오기
+    existing_prompts = [
+        "기본 프롬프트: 사용자가 업로드한 문서에서 검색된 내용을 기반으로 답변합니다.",
+        "업로드된 문서가 없을 경우 일반 챗봇처럼 답변합니다."
+    ]
+
+    # 새로운 프롬프트 추가
+    existing_prompts.append(custom_prompt)
+
+    # 병합된 프롬프트 반환
+    merged_prompts = "\n".join(existing_prompts)
+
+    return {"success": True, "mergedPrompt": merged_prompts}

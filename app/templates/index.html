@@ -211,6 +211,70 @@
       gap: 60px;
       background: #f8f9fa;
     }
+
+    #chat-popup-alt {
+      position: static;
+      margin: 0;
+      width: 430px;
+      height: 705px;
+      background-color: #fff;
+      border-radius: 30px;
+      box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3);
+      opacity: 1;
+      transition: opacity 0.3s ease, transform 0.3s ease;
+      z-index: 999;
+      pointer-events: auto;
+    }
+
+    #chat-header-alt {
+      background-color: transparent;
+      padding: 20px;
+      font-size: 16px;
+      text-align: center;
+      border-bottom: 1px solid #ddd;
+    }
+
+    #chat-svg-alt {
+      margin-bottom: 0.5px;
+    }
+
+    #chat-header-alt small {
+      display: block;
+      font-size: 12px;
+      color: #666;
+    }
+
+    #chat-body-alt {
+      padding: 10px;
+      height: calc(95% - 190px);
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .input-wrapper-alt {
+      display: flex;
+      align-items: center;
+      background: #f1f1f1;
+      border-radius: 30px;
+      padding: 5px 10px;
+    }
+
+    .input-wrapper-alt input {
+      flex: 1;
+      border: none;
+      background: transparent;
+      outline: none;
+      font-size: 16px;
+      padding: 10px;
+    }
+
+    .send-icon-alt {
+      cursor: pointer;
+      background: none;
+      border: none;
+      font-size: 20px;
+    }
   </style>
 </head>
 
@@ -235,6 +299,25 @@
       <div class="input-wrapper">
         <input type="text" id="chat-input-field" placeholder="메시지를 입력해주세요.">
         <button class="send-icon" id="sendButton">→</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="chat-popup-alt">
+    <div id="chat-header-alt">
+      <div id="chat-svg-alt">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="#007bff" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="12" cy="12" r="10" />
+        </svg>
+      </div>
+      <small>챗봇 프롬프트를 추가해보세요!</small>
+    </div>
+    <div id="chat-body-alt">
+    </div>
+    <div id="chat-input-alt">
+      <div class="input-wrapper-alt">
+        <input type="text" id="chat-input-field-alt" placeholder="메시지를 입력해주세요.">
+        <button class="send-icon-alt" id="sendButton-alt">→</button>
       </div>
     </div>
   </div>
@@ -453,6 +536,61 @@
         if (e.key === "Enter" && !e.shiftKey) {
           e.preventDefault();
           sendMessage();
+        }
+      });
+    });
+  </script>
+  <script>
+    document.addEventListener("DOMContentLoaded", function () {
+      const altInput = document.getElementById("chat-input-field-alt");
+      const altSendButton = document.getElementById("sendButton-alt");
+      const altChatBody = document.getElementById("chat-body-alt");
+      const mainChatBody = document.getElementById("chat-body");
+
+      // 프롬프트 추가 함수
+      function appendAltMessage(message) {
+        const msg = document.createElement("div");
+        msg.classList.add("message", "bot");
+        msg.textContent = message;
+        altChatBody.appendChild(msg);
+        altChatBody.scrollTop = altChatBody.scrollHeight;
+      }
+
+      // 버튼 클릭 이벤트
+      altSendButton.addEventListener("click", async function () {
+        const message = altInput.value.trim();
+        if (!message) return;
+
+        // 입력 필드 초기화
+        altInput.value = "";
+
+        try {
+          const response = await fetch("/chat/add_prompt", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ prompt: message })
+          });
+
+          if (!response.ok) {
+            throw new Error("서버 응답 오류");
+          }
+
+          const result = await response.json();
+          const chatHistory = result.chatHistory;
+
+          // 프롬프트 추가
+          appendAltMessage(`프롬프트가 추가되었습니다: ${message}\n이전 내역:\n${chatHistory}`);
+        } catch (error) {
+          console.error("프롬프트 추가 오류:", error);
+          appendAltMessage("프롬프트 추가 중 오류가 발생했습니다.");
+        }
+      });
+
+      // Enter 키 이벤트
+      altInput.addEventListener("keypress", function (e) {
+        if (e.key === "Enter" && !e.shiftKey) {
+          e.preventDefault();
+          altSendButton.click();
         }
       });
     });
