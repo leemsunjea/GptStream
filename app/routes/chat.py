@@ -20,46 +20,52 @@ client = OpenAI(api_key=settings.OPENAI_API_KEY)
 @router.post("/chat/stream")
 async def chat_stream(request: Request, x_user_id: str = Header(..., description="클라이언트 UUID")):
     data = await request.json()
-    message = data.get("message", "")
+    message = data.get("message", "")  # 현재 사용자의 메시지
 
-    # 사용자별 대화 기록 관리
+    # 1. 이전 대화 기록을 불러와 OpenAI에 전달할 형식으로 구성
+    openai_chat_history_list = []
     async with async_session() as session:
-        # 이전 대화 기록 불러오기
-        previous_chats = await session.execute(
-            select(ChatHistory).where(ChatHistory.user_id == x_user_id).order_by(ChatHistory.created_at)
+        previous_chats_result = await session.execute(
+            select(ChatHistory)
+            .where(ChatHistory.user_id == x_user_id)
+            .order_by(ChatHistory.created_at)
         )
-        chat_history = [
-            {"role": "user", "content": chat.user_message} if chat.bot_response == "" else {"role": "assistant", "content": chat.bot_response}
-            for chat in previous_chats.scalars()
-        ]
+        db_previous_chats = previous_chats_result.scalars().all()
 
-        # 새로운 메시지 저장
-        new_chat = ChatHistory(
-            user_id=x_user_id,
-            user_message=message,
-            bot_response="",  # 봇 응답은 이후에 업데이트
-            created_at=func.now()
-        )
-        session.add(new_chat)
-        await session.commit()
+        for chat_entry in db_previous_chats:
+            openai_chat_history_list.append({"role": "user", "content": chat_entry.user_message})
+            if chat_entry.bot_response:  # 봇 응답이 있는 경우에만 추가
+                openai_chat_history_list.append({"role": "assistant", "content": chat_entry.bot_response})
 
-    # 🔍 질문을 벡터화하고 관련 문단 검색
+    # 2. 현재 사용자의 메시지를 대화 기록에 추가
+    openai_chat_history_list.append({"role": "user", "content": message})
+
+    # 3. 🔍 질문을 벡터화하고 관련 문단 검색 (기존 로직 유지)
     context_text = ""
     referenced_docs = []
     if index.ntotal > 0:
         query_embedding = await get_embedding(message)
         if query_embedding is None:
             print("[ERROR] 쿼리 임베딩 생성 실패")
-            return StreamingResponse(event_stream(), media_type="text/event-stream")
-        
+            # event_stream 함수를 직접 호출할 수 없으므로, 빈 스트림 응답을 위한 간단한 처리가 필요할 수 있습니다.
+            # 여기서는 일단 에러 상황을 가정하고 빈 응답을 생성하는 더미 event_stream을 가정합니다.
+            # 실제로는 이 부분에서 StreamingResponse를 바로 반환하거나, event_stream 내부에서 처리해야 합니다.
+            async def dummy_event_stream_on_error():
+                yield f"data: [ERROR] 쿼리 임베딩 생성 실패\n\n"
+                yield f"data: \n\n[DONE]\n\n"
+            return StreamingResponse(dummy_event_stream_on_error(), media_type="text/event-stream")
+
         print(f"[DEBUG] FAISS 인덱스 벡터 개수: {index.ntotal}")
         try:
-            D, I = index.search(np.array([query_embedding]), k=3)  # 상위 7개 문서 검색
+            D, I = index.search(np.array([query_embedding]), k=3)
             print(f"[DEBUG] 검색 결과 인덱스: {I}, 거리: {D}")
         except Exception as e:
             print(f"[ERROR] FAISS 검색 중 오류 발생: {e}")
-            return StreamingResponse(event_stream(), media_type="text/event-stream")
-        
+            async def dummy_event_stream_on_faiss_error():
+                yield f"data: [ERROR] FAISS 검색 중 오류: {str(e)}\n\n"
+                yield f"data: \n\n[DONE]\n\n"
+            return StreamingResponse(dummy_event_stream_on_faiss_error(), media_type="text/event-stream")
+
         if I is not None and len(I[0]) > 0:
             referenced_docs = [doc_store[i] for i in I[0] if i >= 0 and i < len(doc_store)]
             print(f"[DEBUG] 검색된 문서 개수: {len(referenced_docs)}")
@@ -71,23 +77,12 @@ async def chat_stream(request: Request, x_user_id: str = Header(..., description
             print("[DEBUG] 검색 결과가 없습니다.")
     else:
         print("[DEBUG] 인덱스에 문서가 없습니다.")
-
-    # 문서 검색 후 context_text 생성
     context_text = "\n\n".join(referenced_docs) if referenced_docs else ""
 
-    # 개선된 시스템 프롬프트
-    # 아래 코드로 대체:
+    # 4. 시스템 프롬프트 설정 (기존 로직 유지, new_system_prompt는 전역 변수)
     global new_system_prompt
     if 'new_system_prompt' not in globals():
-        new_system_prompt = ""  # 사용자로부터 받은 새로운 시스템 프롬프트
-
-    # 이전 대화 기록을 가져오기 위한 전역 변수
-    # global chat_history
-    # if 'chat_history' not in globals():
-    #     chat_history = []
-
-    # 이전 대화 기록 추가
-    # chat_history.append({"role": "user", "content": message})
+        new_system_prompt = ""
 
     if context_text or new_system_prompt:
         system_prompt = (
@@ -96,50 +91,54 @@ async def chat_stream(request: Request, x_user_id: str = Header(..., description
             "또한 답변에 사용된 문서의 특정 부분을 반드시 언급하세요.\n\n"
             "문서 내용:\n" + context_text + "\n\n"
             "" + new_system_prompt + ""
-            "답변에서 줄바꿈은 '\n'으로 표시하세요."
+            "답변에서 줄바꿈은 '\\n'으로 표시하세요."
         )
     else:
         system_prompt = (
             "업로드된 문서가 없으니 일반 챗봇처럼 답변해주세요. "
-            "답변에서 줄바꿈은 '\n'으로 표시하세요."
-            "문서 내용:\n" + context_text + "\n\n"
-            "추가된 시스템 프롬프트:\n" + new_system_prompt + "\n\n"
+            "답변에서 줄바꿈은 '\\n'으로 표시하세요."
+            "문서 내용:\n" + context_text + "\n\n" # context_text는 비어있을 수 있음
+            "추가된 시스템 프롬프트:\n" + new_system_prompt + "\n\n" # new_system_prompt는 비어있을 수 있음
         )
 
-    # 이전 대화 기록을 시스템 메시지에 추가
-    messages = [{"role": "system", "content": system_prompt}] + chat_history
+    messages_to_send_to_openai = [{"role": "system", "content": system_prompt}] + openai_chat_history_list
 
     async def event_stream():
-        full_response = ""
+        full_response_content = ""
         try:
-            response = client.chat.completions.create(
+            openai_response_stream = client.chat.completions.create(
                 model="gpt-4",
-                messages=messages,
+                messages=messages_to_send_to_openai,
                 stream=True
             )
-            for chunk in response:
-                content = getattr(chunk.choices[0].delta, "content", None)
-                if content:
-                    print(f"[DEBUG] 응답 내용: {content}")  # 디버깅용 로그 추가
-                    full_response += content
-                    yield f"data: {content}\n\n"
-                    await asyncio.sleep(0)
+            for chunk in openai_response_stream:
+                content_piece = getattr(chunk.choices[0].delta, "content", None)
+                if content_piece:
+                    full_response_content += content_piece
+                    yield f"data: {content_piece}\n\n"
+                    await asyncio.sleep(0) # 클라이언트 처리를 위한 약간의 지연
 
-            # 봇 응답을 대화 기록에 추가
-            chat_history.append({"role": "assistant", "content": full_response})
-
-            # DB 저장
+            # 5. 현재 사용자 메시지와 봇의 전체 응답을 DB에 하나의 레코드로 저장
             async with async_session() as session:
-                chat = ChatHistory(
-                    user_id=x_user_id,  # 사용자 ID 저장
+                new_exchange_record = ChatHistory(
+                    user_id=x_user_id,
                     user_message=message,
-                    bot_response=full_response
+                    bot_response=full_response_content,
+                    created_at=func.now() # SQLAlchemy가 자동으로 처리하도록 server_default를 사용하거나 명시적 설정
                 )
-                session.add(chat)
+                session.add(new_exchange_record)
                 await session.commit()
+
+            if referenced_docs:
+                yield f"\n\ndata: [참고한 문단]\n\n"
+                for idx, doc_content in enumerate(referenced_docs, 1): # 변수명 수정 doc -> doc_content
+                    yield f"data: [문단 {idx}]\n{doc_content}\n\n"
+
+            yield "data: \n\n[DONE]\n\n"
+
         except Exception as e:
             import traceback
-            print("오류 발생:", e)
+            print(f"오류 발생 in event_stream: {e}")
             traceback.print_exc()
             yield f"data: [ERROR] {str(e)}\n\n"
 
@@ -163,32 +162,3 @@ async def add_prompt(request: Request):
     print("[DEBUG] 새로운 프롬프트:", new_system_prompt)
 
     return {"success": True, "chatHistory": new_system_prompt}
-
-# @router.post("/chat")
-# async def chat(
-#     request: Request,
-#     x_user_id: str = Header(..., description="클라이언트 UUID")
-# ):
-#     data = await request.json()
-#     message = data.get("message", "")
-
-#     # 사용자별 대화 기록 관리
-#     async with async_session() as session:
-#         # 사용자 메시지 저장
-#         user_message = ChatHistory(
-#             user_id=x_user_id,  # 사용자 ID 저장
-#             user_message=message,
-#             bot_response="",  # 봇 응답은 이후에 업데이트
-#             created_at=func.now()
-#         )
-#         session.add(user_message)
-#         await session.commit()
-
-#         # 봇 응답 생성 (예시: echo)
-#         bot_response = f"너가 말한 건 '{message}' 이구나!"
-
-#         # 봇 응답 업데이트
-#         user_message.bot_response = bot_response
-#         await session.commit()
-
-#     return {"reply": bot_response}
