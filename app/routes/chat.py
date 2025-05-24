@@ -136,6 +136,11 @@ async def add_prompt(request: Request):
 
     # 새로운 시스템 프롬프트를 전역 변수로 저장
     global new_system_prompt
+    previous_prompt = new_system_prompt if 'new_system_prompt' in globals() else "(없음)"
     new_system_prompt = new_prompt
+
+    # 로그 출력
+    print("[DEBUG] 이전 프롬프트:", previous_prompt)
+    print("[DEBUG] 새로운 프롬프트:", new_system_prompt)
 
     return {"success": True, "chatHistory": new_system_prompt}
