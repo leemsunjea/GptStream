@@ -10,12 +10,15 @@ from app.vector_db import get_embedding_async, split_text_to_paragraphs, doc_sto
 import asyncio
 import uuid
 from asyncio import Lock
+import logging
 
 router = APIRouter()
 upload_dir = "/tmp/temp_uploads"
 task_statuses = {}
 doc_store_lock = Lock()
 index_lock = Lock()
+
+logging.basicConfig(level=logging.DEBUG)
 
 async def save_upload_file(file: UploadFile, upload_dir: str):
     os.makedirs(upload_dir, exist_ok=True)
@@ -57,7 +60,8 @@ async def process_pdf(task_id: str, file_path: str, filename: str, session, logs
                     doc_id = result.scalar()
                     doc_store.append(text)
                     logs.append(f"페이지 {i+1}: 문서 ID {doc_id} 저장")
-                    print(f"[DEBUG] 저장된 문서 ID: {doc_id}, 페이지 번호: {i+1}, 내용: {text[:100]}")
+                    print(f"[DEBUG] 저장된 문서 ID: {doc_id}, 페이지 번호: {i+1}, 내용: {text[:100]}", flush=True)
+                    logging.debug(f"저장된 문서 ID: {doc_id}, 페이지 번호: {i+1}, 내용: {text[:100]}")
                     await asyncio.sleep(0)  # 이벤트 루프에 제어권을 넘겨 진행 상황을 실시간으로 출력
                     paragraphs = split_text_to_paragraphs(text)
                     tasks = [get_embedding_async(para) for para in paragraphs]
