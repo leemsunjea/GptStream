@@ -27,7 +27,7 @@
     }
 
     #chat-popup-2 {
-      position: static;
+      position: relative;
       margin: 0;
       width: 430px;
       height: 705px;
@@ -38,6 +38,7 @@
       transition: opacity 0.3s ease, transform 0.3s ease;
       z-index: 999;
       pointer-events: auto;
+      overflow: hidden;
     }
 
     #chat-popup-2.show {
@@ -96,6 +97,14 @@
       flex-direction: column;
     }
 
+    #chat-body-2 {
+      padding: 10px;
+      height: calc(100% - 80px);
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+    }
+
     .message {
       padding: 10px;
       margin: 5px;
@@ -117,6 +126,17 @@
     #chat-input {
       padding: 10px;
       border-top: 1px solid #ddd;
+    }
+
+    #chat-input-2 {
+      position: absolute;
+      bottom: 0;
+      width: 100%;
+      padding: 10px;
+      border-top: 1px solid #ddd;
+      background-color: #f9f9f9;
+      border-bottom-left-radius: 30px;
+      border-bottom-right-radius: 30px;
     }
 
     .input-wrapper {
@@ -294,7 +314,7 @@
   </div>
   <script>
     document.addEventListener("DOMContentLoaded", function () {
-      const API_BASE = window.location.origin;
+      const API_BASE = "http://127.0.0.1:8000"; // FastAPI 서버 주소로 변경
       const input = document.getElementById("chat-input-field");
       const chatBox = document.getElementById("chat-body");
       const sendButton = document.getElementById("sendButton");
