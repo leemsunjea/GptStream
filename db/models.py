@@ -6,6 +6,7 @@ class ChatHistory(Base):
     __tablename__ = "chat_history"
 
     id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(String, nullable=False)  # 사용자 ID 필드 추가
     user_message = Column(Text, nullable=False)
     bot_response = Column(Text, nullable=False)
     created_at = Column(DateTime, server_default=func.now())
