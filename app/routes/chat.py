@@ -56,6 +56,14 @@ async def chat_stream(request: Request):
     # 개선된 시스템 프롬프트
     new_system_prompt = data.get("new_system_prompt", "")  # 사용자로부터 받은 새로운 시스템 프롬프트
 
+    # 이전 대화 기록을 가져오기 위한 전역 변수
+    global chat_history
+    if 'chat_history' not in globals():
+        chat_history = []
+
+    # 이전 대화 기록 추가
+    chat_history.append({"role": "user", "content": message})
+
     if context_text or new_system_prompt:
         system_prompt = (
             "다음은 사용자가 업로드한 문서에서 검색된 내용입니다. 이 내용을 기반으로 사용자의 질문에 답변해주세요. "
@@ -71,10 +79,8 @@ async def chat_stream(request: Request):
             "답변에서 줄바꿈은 '\n'으로 표시하세요."
         )
 
-    messages = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": message}
-    ]
+    # 이전 대화 기록을 시스템 메시지에 추가
+    messages = [{"role": "system", "content": system_prompt}] + chat_history
 
     async def event_stream():
         full_response = ""
@@ -90,6 +96,9 @@ async def chat_stream(request: Request):
                     full_response += content
                     yield f"data: {content}\n\n"
                     await asyncio.sleep(0)
+
+            # 봇 응답을 대화 기록에 추가
+            chat_history.append({"role": "assistant", "content": full_response})
 
             # 참조 문서 출력
             if referenced_docs:
