@@ -1,7 +1,7 @@
 # app/routes/chat.py
 
 import asyncio
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, Header
 from fastapi.responses import StreamingResponse
 import openai
 import numpy as np
@@ -10,6 +10,7 @@ from db.models import ChatHistory
 from db.database import async_session
 from app.vector_db import get_embedding_async as get_embedding, index, doc_store  # vector 연동
 from openai import OpenAI
+from sqlalchemy import func
 
 router = APIRouter()
 
@@ -148,3 +149,31 @@ async def add_prompt(request: Request):
     print("[DEBUG] 새로운 프롬프트:", new_system_prompt)
 
     return {"success": True, "chatHistory": new_system_prompt}
+
+@router.post("/chat")
+async def chat(
+    request: Request,
+    x_user_id: str = Header(..., description="클라이언트 UUID")
+):
+    data = await request.json()
+    message = data.get("message", "")
+
+    # 사용자별 대화 기록 관리
+    async with async_session() as session:
+        # 사용자 메시지 저장
+        user_message = ChatHistory(
+            user_message=message,
+            bot_response="",  # 봇 응답은 이후에 업데이트
+            created_at=func.now()
+        )
+        session.add(user_message)
+        await session.commit()
+
+        # 봇 응답 생성 (예시: echo)
+        bot_response = f"너가 말한 건 '{message}' 이구나!"
+
+        # 봇 응답 업데이트
+        user_message.bot_response = bot_response
+        await session.commit()
+
+    return {"reply": bot_response}

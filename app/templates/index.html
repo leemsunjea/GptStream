@@ -452,7 +452,30 @@
         logBody.scrollTop = logBody.scrollHeight;
       }
 
-      // 챗봇 메시지 전송 함수
+      // 사용자 UUID 생성 및 저장
+      let userId = localStorage.getItem("userId");
+      if (!userId) {
+        userId = crypto.randomUUID();
+        localStorage.setItem("userId", userId);
+      }
+
+      // 챗봇 질문 보내기
+      async function sendChat(message) {
+        const response = await fetch("/chat", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-user-id": userId, // 사용자 식별용
+          },
+          body: JSON.stringify({ message })
+        });
+
+        const data = await response.json();
+        console.log("응답:", data.reply);
+        appendMessage("bot", data.reply); // 응답 메시지 추가
+      }
+
+      // 기존 sendMessage 함수 수정
       async function sendMessage() {
         const message = input.value.trim();
         if (!message) return;
@@ -460,42 +483,12 @@
         appendMessage("user", message);
         input.value = "";
         sendButton.style.display = "none";
-        partial = "";
-        lastBotDiv = null;
 
         try {
-          const response = await fetch(`${API_BASE}/chat/stream`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ message: message })
-          });
-          const reader = response.body.getReader();
-          const decoder = new TextDecoder();
-
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            const text = decoder.decode(value, { stream: true });
-            const lines = text.split("\n");
-            for (let line of lines) {
-              if (line.startsWith("data: ")) {
-                let content = line.slice(6);
-                content = content.replace(/\n/g, "<br>");
-                partial += content;
-                if (!lastBotDiv) {
-                  lastBotDiv = document.createElement("div");
-                  lastBotDiv.classList.add("message", "bot");
-                  chatBox.appendChild(lastBotDiv);
-                }
-                lastBotDiv.innerHTML = partial;
-                chatBox.scrollTop = chatBox.scrollHeight;
-              }
-            }
-          }
+          await sendChat(message); // sendChat 호출
         } catch (err) {
           console.error("전송 오류:", err);
           appendMessage("bot", "오류가 발생했습니다. 다시 시도해주세요.");
-          appendSystemLog(`메시지 전송 오류: ${err.message}`);
         } finally {
           sendButton.style.display = "";
         }
