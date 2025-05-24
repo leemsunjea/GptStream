@@ -646,25 +646,50 @@
         // 입력 필드 초기화
         altInput.value = "";
 
+        let userId = localStorage.getItem("userId");
+        if (!userId) {
+          // userId가 없으면 새로 생성하거나, 사용자에게 알림을 표시할 수 있습니다.
+          // 여기서는 간단히 오류를 출력하고 함수를 종료합니다.
+          // 또는 채팅 기능처럼 UUID를 생성할 수도 있습니다.
+          // 예를 들어, 채팅과 동일한 로직을 사용하려면:
+          userId = crypto.randomUUID();
+          localStorage.setItem("userId", userId);
+          console.log("새로운 userId 생성 (프롬프트 추가용):", userId);
+          // appendAltMessage("사용자 ID가 없어 새로 생성했습니다. 다시 시도해주세요.");
+          // return;
+        }
+
         try {
           const response = await fetch("/chat/add_prompt", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: {
+              "Content-Type": "application/json",
+              "x-user-id": userId // 사용자 ID 헤더 추가
+            },
             body: JSON.stringify({ prompt: message })
           });
 
           if (!response.ok) {
-            throw new Error("서버 응답 오류");
+            // 서버로부터 받은 자세한 오류 메시지를 확인
+            const errorData = await response.json().catch(() => ({ detail: "서버 응답 오류 (JSON 파싱 불가)" }));
+            console.error("서버 응답 상세:", errorData);
+            throw new Error(errorData.detail || "서버 응답 오류");
           }
 
           const result = await response.json();
-          const chatHistory = result.chatHistory;
-
-          // 프롬프트 추가
-          appendAltMessage(`프롬프트가 추가되었습니다: ${message}\n\n이전 내역:\n${chatHistory}`);
+          // 서버 응답에서 chatHistory 대신 new_system_prompt를 사용하도록 수정 (백엔드 응답 형식에 따라 다름)
+          // 백엔드 /chat/add_prompt 응답이 {"success": True, "new_system_prompt": user_pref.system_prompt} 이므로
+          // chatHistory 대신 new_system_prompt를 사용해야 합니다.
+          // 또한, 이전 내역을 보여주는 부분은 현재 백엔드 응답에 없으므로 제거하거나 수정 필요.
+          // 여기서는 성공 메시지만 표시하도록 단순화합니다.
+          if (result.success && result.new_system_prompt) {
+            appendAltMessage(`프롬프트가 성공적으로 추가/업데이트되었습니다: ${result.new_system_prompt}`);
+          } else {
+            appendAltMessage(`프롬프트 추가/업데이트는 성공했지만, 새 프롬프트 내용을 받지 못했습니다.`);
+          }
         } catch (error) {
           console.error("프롬프트 추가 오류:", error);
-          appendAltMessage("프롬프트 추가 중 오류가 발생했습니다.");
+          appendAltMessage(`프롬프트 추가 중 오류가 발생했습니다: ${error.message}`);
         }
       });
 
