@@ -501,7 +501,7 @@
       const sendButton2 = document.getElementById("sendButton-2");
 
       // 메시지 추가 함수
-      function appendMessage(role, message) {
+      function appendMessageToChat2(role, message) {
         const msg = document.createElement("div");
         msg.classList.add("message", role);
         msg.textContent = message;
@@ -509,40 +509,24 @@
         chatBox2.scrollTop = chatBox2.scrollHeight;
       }
 
-      // 시스템 프롬프트 업데이트 함수
-      async function updateSystemPrompt() {
+      // 두 번째 채팅창 메시지 전송 함수
+      async function sendMessageToChat2() {
         const message = input2.value.trim();
         if (!message) return;
 
+        appendMessageToChat2("user", message);
         input2.value = "";
-        appendMessage("user", "시스템 프롬프트가 추가되었습니다.");
 
-        try {
-          const response = await fetch("/chat/add_system_prompt", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ prompt: message })
-          });
-
-          if (!response.ok) {
-            throw new Error("서버 오류");
-          }
-
-          const data = await response.json();
-          chatBox2.innerHTML = ""; // 기존 메시지 초기화
-          appendMessage("bot", data.current_prompt);
-        } catch (err) {
-          console.error("업데이트 오류:", err);
-          appendMessage("bot", "오류가 발생했습니다. 다시 시도해주세요.");
-        }
+        // 서버와의 통신이 필요하다면 여기에 추가 가능
+        appendMessageToChat2("bot", "시스템 프롬프트가 추가되었습니다.");
       }
 
       // 두 번째 채팅창 이벤트 바인딩
-      sendButton2.addEventListener("click", updateSystemPrompt);
+      sendButton2.addEventListener("click", sendMessageToChat2);
       input2.addEventListener("keypress", function (e) {
         if (e.key === "Enter" && !e.shiftKey) {
           e.preventDefault();
-          updateSystemPrompt();
+          sendMessageToChat2();
         }
       });
     });

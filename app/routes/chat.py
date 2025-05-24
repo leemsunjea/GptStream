@@ -56,6 +56,7 @@ async def chat_stream(request: Request):
     context_text = "\n\n".join(referenced_docs) if referenced_docs else ""
 
     # 개선된 시스템 프롬프트
+    global system_prompt
     if context_text:
         system_prompt = (
             "다음은 사용자가 업로드한 문서에서 검색된 내용입니다. 이 내용을 기반으로 사용자의 질문에 답변해주세요. "
@@ -69,6 +70,10 @@ async def chat_stream(request: Request):
             "업로드된 문서가 없으니 일반 챗봇처럼 답변해주세요. "
             "답변에서 줄바꿈은 '\n'으로 표시하세요."
         )
+
+    # 새로운 프롬프트 추가
+    additional_prompt = "\n\n추가된 프롬프트 내용입니다."
+    system_prompt += additional_prompt
 
     messages = [
         {"role": "system", "content": system_prompt},
