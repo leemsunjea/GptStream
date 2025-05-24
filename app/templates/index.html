@@ -101,13 +101,15 @@
     /* Input field text color */
     #chat-input-field,
     #chat-input-field-alt {
-      color: #000000 !important; /* 검정색 텍스트 */
+      color: #000000 !important;
+      /* 검정색 텍스트 */
     }
-    
+
     /* Placeholder text color */
     #chat-input-field::placeholder,
     #chat-input-field-alt::placeholder {
-      color: #666666 !important; /* 어두운 회색 플레이스홀더 */
+      color: #666666 !important;
+      /* 어두운 회색 플레이스홀더 */
     }
 
     .chat-body::-webkit-scrollbar-thumb {
@@ -178,7 +180,8 @@
     }
 
     .input-wrapper input:focus {
-      color: #000000 !important; /* 검정색 텍스트 유지 */
+      color: #000000 !important;
+      /* 검정색 텍스트 유지 */
     }
 
     .send-icon {
@@ -463,6 +466,11 @@
         partial = "";
         lastBotDiv = null;
 
+        let userId = localStorage.getItem("userId");
+        if (!userId) {
+          userId = crypto.randomUUID();
+          localStorage.setItem("userId", userId);
+        }
         try {
           const response = await fetch(`${API_BASE}/chat/stream`, {
             method: "POST",
