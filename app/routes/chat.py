@@ -21,6 +21,8 @@ async def chat_stream(request: Request):
     data = await request.json()
     message = data.get("message", "")
 
+    chat_id = data.get("chatId", "default")
+
     # 🔍 질문을 벡터화하고 관련 문단 검색
     context_text = ""
     referenced_docs = []
@@ -54,24 +56,34 @@ async def chat_stream(request: Request):
     context_text = "\n\n".join(referenced_docs) if referenced_docs else ""
 
     # 개선된 시스템 프롬프트
-    if context_text:
+    if chat_id == "chat2":
         system_prompt = (
-            "다음은 사용자가 업로드한 문서에서 검색된 내용입니다. 이 내용을 기반으로 사용자의 질문에 답변해주세요. "
-            "만약 내용이 질문에 답변하기에 충분하지 않다면, 그 사실을 명시하세요. "
-            "또한 답변에 사용된 문서의 특정 부분을 반드시 언급하세요.\n\n"
-            "문서 내용:\n" + context_text + "\n\n"
+            "이것은 추가 챗봇입니다. 사용자의 질문에 답변해주세요. "
             "답변에서 줄바꿈은 '\n'으로 표시하세요."
         )
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": message}
+        ]
     else:
-        system_prompt = (
-            "업로드된 문서가 없으니 일반 챗봇처럼 답변해주세요. "
-            "답변에서 줄바꿈은 '\n'으로 표시하세요."
-        )
+        if context_text:
+            system_prompt = (
+                "다음은 사용자가 업로드한 문서에서 검색된 내용입니다. 이 내용을 기반으로 사용자의 질문에 답변해주세요. "
+                "만약 내용이 질문에 답변하기에 충분하지 않다면, 그 사실을 명시하세요. "
+                "또한 답변에 사용된 문서의 특정 부분을 반드시 언급하세요.\n\n"
+                "문서 내용:\n" + context_text + "\n\n"
+                "답변에서 줄바꿈은 '\n'으로 표시하세요."
+            )
+        else:
+            system_prompt = (
+                "업로드된 문서가 없으니 일반 챗봇처럼 답변해주세요. "
+                "답변에서 줄바꿈은 '\n'으로 표시하세요."
+            )
 
-    messages = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": message}
-    ]
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": message}
+        ]
 
     async def event_stream():
         full_response = ""

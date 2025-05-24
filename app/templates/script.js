@@ -9,12 +9,12 @@ document.addEventListener("DOMContentLoaded", function () {
     let partial = "";
 
     // 메시지 추가 함수
-    function appendMessage(role, message) {
+    function appendMessage(role, message, chatBoxInstance) {
         const msg = document.createElement("div");
         msg.classList.add("message", role);
         msg.textContent = message;
-        chatBox.appendChild(msg);
-        chatBox.scrollTop = chatBox.scrollHeight;
+        chatBoxInstance.appendChild(msg);
+        chatBoxInstance.scrollTop = chatBoxInstance.scrollHeight;
         return msg;
     }
 
@@ -38,7 +38,7 @@ document.addEventListener("DOMContentLoaded", function () {
         const message = input.value.trim();
         if (!message) return;
 
-        appendMessage("user", message);
+        appendMessage("user", message, chatBox);
         input.value = "";
         sendButton.style.display = "none";
         partial = "";
@@ -75,7 +75,7 @@ document.addEventListener("DOMContentLoaded", function () {
             }
         } catch (err) {
             console.error("전송 오류:", err);
-            appendMessage("bot", "오류가 발생했습니다. 다시 시도해주세요.");
+            appendMessage("bot", "오류가 발생했습니다. 다시 시도해주세요.", chatBox);
             appendSystemLog(`메시지 전송 오류: ${err.message}`);
         } finally {
             sendButton.style.display = "";
@@ -197,6 +197,68 @@ document.addEventListener("DOMContentLoaded", function () {
         if (e.key === "Enter" && !e.shiftKey) {
             e.preventDefault();
             sendMessage();
+        }
+    });
+
+    // 두 번째 채팅창 관련 변수 및 함수
+    const input2 = document.getElementById("chat-input-field-2");
+    const chatBox2 = document.getElementById("chat-body-2");
+    const sendButton2 = document.getElementById("sendButton-2");
+
+    async function sendMessageFromChat2() {
+        const message = input2.value.trim();
+        if (!message) return;
+
+        appendMessage("user", message, chatBox2);
+        input2.value = "";
+        sendButton2.style.display = "none";
+        let partial = "";
+        let lastBotDiv = null;
+
+        try {
+            const response = await fetch(`${API_BASE}/chat/stream`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ message: message, chatId: "chat2" })
+            });
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                const text = decoder.decode(value, { stream: true });
+                const lines = text.split("\n");
+                for (let line of lines) {
+                    if (line.startsWith("data: ")) {
+                        let content = line.slice(6);
+                        content = content.replace(/\n/g, "<br>");
+                        partial += content;
+                        if (!lastBotDiv) {
+                            lastBotDiv = document.createElement("div");
+                            lastBotDiv.classList.add("message", "bot");
+                            chatBox2.appendChild(lastBotDiv);
+                        }
+                        lastBotDiv.innerHTML = partial;
+                        chatBox2.scrollTop = chatBox2.scrollHeight;
+                    }
+                }
+            }
+        } catch (err) {
+            console.error("전송 오류:", err);
+            appendMessage("bot", "오류가 발생했습니다. 다시 시도해주세요.", chatBox2);
+            appendSystemLog(`추가 챗봇 메시지 전송 오류: ${err.message}`);
+        } finally {
+            sendButton2.style.display = "";
+        }
+    }
+
+    // 두 번째 채팅창 이벤트 바인딩
+    sendButton2.addEventListener("click", sendMessageFromChat2);
+    input2.addEventListener("keypress", function (e) {
+        if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            sendMessageFromChat2();
         }
     });
 });
