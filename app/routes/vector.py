@@ -61,7 +61,6 @@ async def process_pdf(task_id: str, file_path: str, filename: str, session, logs
                     doc_store.append(text)
                     logs.append(f"페이지 {i+1}: 문서 ID {doc_id} 저장")
                     print(f"[DEBUG] 저장된 문서 ID: {doc_id}, 페이지 번호: {i+1}, 내용: {text[:100]}", flush=True)
-                    logging.debug(f"저장된 문서 ID: {doc_id}, 페이지 번호: {i+1}, 내용: {text[:100]}")
                     await asyncio.sleep(0)  # 이벤트 루프에 제어권을 넘겨 진행 상황을 실시간으로 출력
                     paragraphs = split_text_to_paragraphs(text)
                     tasks = [get_embedding_async(para) for para in paragraphs]
