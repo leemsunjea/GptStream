@@ -488,56 +488,34 @@
       async function pollTaskStatus(task_id) {
         const interval = setInterval(async () => {
           try {
-            const interval = setInterval(async () => {
-              try {
-                const response = await fetch(`${API_BASE}/task_status/${task_id}`);
-                if (!response.ok) {
-                  const errorMsg = `서버 응답 오류: ${response.status}`;
-                  console.error(errorMsg);
-                  appendSystemLog(errorMsg);
-                  clearInterval(interval);
-                  return;
-                }
-
-                const result = await response.json();
-
-                // 로그가 존재하면 갱신
-                if (Array.isArray(result.logs)) {
-                  const logContainer = document.getElementById("log-output");
-                  logContainer.innerHTML = result.logs.map(log => `<div>${log}</div>`).join("");
-                }
-
-                // 작업 완료 상태일 경우 polling 종료
-                if (["completed", "failed"].includes(result.status)) {
-                  appendSystemLog(`작업 상태: ${result.status === "completed" ? "✅ 완료됨" : "❌ 실패함"}`);
-                  clearInterval(interval);
-                }
-              } catch (error) {
-                console.error("작업 상태 확인 중 예외 발생:", error);
-                appendSystemLog(`작업 상태 확인 중 예외 발생: ${error.message}`);
-                clearInterval(interval);
-              }
-            }, 2000); // 2초마다 polling
-            const result = await response.json();
-            if (result.status === "completed") {
-              appendMessage("bot", `PDF 처리 완료: ${result.page_count || 0} 페이지`);
-              if (result.logs && Array.isArray(result.logs)) {
-                result.logs.forEach(msg => appendSystemLog(msg));
-              }
+            const response = await fetch(`${API_BASE}/task_status/${task_id}`); // response 정의
+            if (!response.ok) {
+              const errorMsg = `서버 응답 오류: ${response.status}`;
+              console.error(errorMsg);
+              appendSystemLog(errorMsg);
               clearInterval(interval);
-            } else if (result.status === "failed") {
-              appendMessage("bot", `PDF 처리 실패: ${result.detail || "서버 오류"}`);
-              if (result.logs && Array.isArray(result.logs)) {
-                result.logs.forEach(msg => appendSystemLog(msg));
-              }
+              return;
+            }
+
+            const result = await response.json();
+
+            // 로그가 존재하면 갱신
+            if (Array.isArray(result.logs)) {
+              const logContainer = document.getElementById("log-output");
+              logContainer.innerHTML = result.logs.map(log => `<div>${log}</div>`).join("");
+            }
+
+            // 작업 완료 상태일 경우 polling 종료
+            if (["completed", "failed"].includes(result.status)) {
+              appendSystemLog(`작업 상태: ${result.status === "completed" ? "✅ 완료됨" : "❌ 실패함"}`);
               clearInterval(interval);
             }
           } catch (error) {
-            console.error("폴링 오류:", error);
-            appendSystemLog(`작업 상태 확인 오류: ${error.message}`);
+            console.error("작업 상태 확인 중 예외 발생:", error);
+            appendSystemLog(`작업 상태 확인 중 예외 발생: ${error.message}`);
             clearInterval(interval);
           }
-        }, 5000); // 5초마다 폴링
+        }, 2000); // 2초마다 polling
       }
 
       // PDF 업로드 버튼 클릭 시 파일 선택창 열기
