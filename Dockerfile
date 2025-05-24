@@ -10,15 +10,19 @@ RUN apt-get update && \
     libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# 비-root 사용자 생성 및 권한 설정
-RUN groupadd -r appuser && useradd -r -g appuser appuser \
-    && mkdir -p /tmp/gptstream \
-    && chown -R appuser:appuser /tmp/gptstream \
-    && chmod 755 /tmp/gptstream
+# 데이터 디렉토리 생성 및 권한 설정
+RUN mkdir -p /app/data /dev/shm/gptstream/users \
+    && chmod -R 777 /app /dev/shm/gptstream \
+    # 비-root 사용자 생성
+    && groupadd -r appuser \
+    && useradd -r -g appuser appuser \
+    # 소유권 설정
+    && chown -R appuser:appuser /app /dev/shm/gptstream
 
-# 데이터 디렉토리 환경 변수 설정
-ENV DATA_DIR=/tmp/gptstream/data
+# 환경 변수 설정
+ENV DATA_DIR=/app/data
 ENV PYTHONPATH=/app
+ENV TMPDIR=/tmp
 
 # 포트 노출
 EXPOSE 8000
@@ -37,8 +41,9 @@ RUN chown -R appuser:appuser /app
 # 비-root 사용자로 전환
 USER appuser
 
-# 실행 전 필요한 디렉토리 생성
-RUN mkdir -p $DATA_DIR/uploads $DATA_DIR/vector_index
+# 필요한 디렉토리 생성 및 권한 설정
+RUN mkdir -p $DATA_DIR/uploads $DATA_DIR/vector_index \
+    && chmod -R 777 $DATA_DIR /dev/shm/gptstream
 
 # 실행 명령
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--timeout-keep-alive", "25"]

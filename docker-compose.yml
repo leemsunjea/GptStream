@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    container_name: gptstream
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - DATA_DIR=/app/data
+      - TMPDIR=/tmp
+    volumes:
+      - gptstream_data:/app/data
+      - /dev/shm:/dev/shm
+    ulimits:
+      memlock: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+
+volumes:
+  gptstream_data:
+    driver: local

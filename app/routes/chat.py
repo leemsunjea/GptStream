@@ -2,64 +2,162 @@
 
 import os
 import asyncio
-import pickle
-import numpy as np
+import json
+import logging
+import tempfile
 from pathlib import Path
-from typing import Dict, List, Optional
-from fastapi import APIRouter, Request, Depends, HTTPException
+from typing import Dict, List, Optional, Any
+from fastapi import APIRouter, Request, Depends, HTTPException, Form
 from fastapi.responses import StreamingResponse
 import openai
-import faiss
+from openai import OpenAI, AsyncOpenAI
 from app.config import settings
 from db.models import ChatHistory
-from db.database import get_async_session, get_user_session, get_user_vector_dir, get_or_create_session_id
-from openai import OpenAI
+from db.database import get_async_session, get_or_create_session_id, get_db, get_user_data_dir
+from fastapi import HTTPException, status
 
-# 전역 변수 대신 세션별 인덱스와 문서 저장소를 관리할 딕셔너리
-session_stores: Dict[str, dict] = {}
+# 로깅 설정
+logger = logging.getLogger(__name__)
+
+# OpenAI 클라이언트 초기화
+openai_client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+
+# 채팅 모델 설정
+CHAT_MODEL = "gpt-3.5-turbo"
+MAX_TOKENS = 2000
+TEMPERATURE = 0.7
+
+# 세션별 채팅 기록을 저장할 기본 디렉토리
+DATA_DIR = os.getenv("DATA_DIR", "/app/data")
+CHAT_HISTORY_DIR = os.path.join(DATA_DIR, "chat_history")
+
+# 디렉토리 생성
+try:
+    os.makedirs(CHAT_HISTORY_DIR, exist_ok=True, mode=0o777)
+except Exception as e:
+    logger.error(f"채팅 기록 디렉토리 생성 실패: {e}")
+    # 실패 시 임시 디렉토리 사용
+    CHAT_HISTORY_DIR = os.path.join(tempfile.gettempdir(), "gptstream", "chat_history")
+    os.makedirs(CHAT_HISTORY_DIR, exist_ok=True, mode=0o777)
+
+def get_chat_history_path(session_id: str) -> str:
+    """세션 ID에 해당하는 채팅 기록 파일 경로를 반환합니다."""
+    try:
+        user_dir = get_user_data_dir(session_id)
+        chat_dir = os.path.join(user_dir, "chat_history")
+        os.makedirs(chat_dir, exist_ok=True, mode=0o777)
+        return os.path.join(chat_dir, "chat.json")
+    except Exception as e:
+        logger.error(f"채팅 기록 경로 생성 실패: {e}")
+        # 실패 시 임시 디렉토리 사용
+        temp_dir = os.path.join(tempfile.gettempdir(), "gptstream", "chat_history", session_id)
+        os.makedirs(temp_dir, exist_ok=True, mode=0o777)
+        return os.path.join(temp_dir, "chat.json")
 
 def get_or_create_session_store(session_id: str) -> dict:
-    """세션 ID에 해당하는 저장소를 가져오거나 생성"""
-    if session_id not in session_stores:
-        # 새 세션 저장소 초기화
-        session_stores[session_id] = {
-            "index": None,  # FAISS 인덱스
-            "doc_store": []  # 문서 저장소
-        }
-        
-        # 저장된 인덱스 로드 시도
-        vector_dir = get_user_vector_dir(session_id)
-        index_path = os.path.join(vector_dir, "faiss.index")
-        doc_store_path = os.path.join(vector_dir, "doc_store.pkl")
-        
-        try:
-            if os.path.exists(index_path) and os.path.exists(doc_store_path):
-                session_stores[session_id]["index"] = faiss.read_index(index_path)
-                with open(doc_store_path, 'rb') as f:
-                    session_stores[session_id]["doc_store"] = pickle.load(f)
-        except Exception as e:
-            print(f"[WARNING] 세션 저장소 로드 실패: {e}")
+    """세션 ID에 해당하는 저장소를 가져오거나 생성합니다."""
+    session_store = {
+        "messages": [],
+        "documents": [],
+        "index": None,
+        "doc_store": {},
+        "created_at": time.time(),
+        "last_accessed": time.time()
+    }
     
-    return session_stores[session_id]
+    # 채팅 기록 파일 경로
+    history_file = get_chat_history_path(session_id)
+    
+    try:
+        # 기존 채팅 기록이 있으면 로드
+        if os.path.exists(history_file):
+            with open(history_file, 'r', encoding='utf-8') as f:
+                saved_data = json.load(f)
+                # 필요한 필드만 업데이트 (보안상 안전하게)
+                for key in ["messages", "documents", "doc_store"]:
+                    if key in saved_data:
+                        session_store[key] = saved_data[key]
+                
+                # 메타데이터 유지
+                if "created_at" in saved_data:
+                    session_store["created_at"] = saved_data["created_at"]
+    
+    except Exception as e:
+        logging.error(f"채팅 기록 로드 실패: {e}")
+        # 오류 발생 시 새 세션 생성
+    
+    return session_store
 
-def save_session_store(session_id: str):
-    """세션 저장소를 파일로 저장"""
-    if session_id in session_stores:
-        vector_dir = get_user_vector_dir(session_id)
-        os.makedirs(vector_dir, exist_ok=True)
-        
-        index_path = os.path.join(vector_dir, "faiss.index")
-        doc_store_path = os.path.join(vector_dir, "doc_store.pkl")
-        
+async def load_chat_history(session_id: str, max_messages: int = 20) -> List[Dict[str, str]]:
+    """세션 ID에 해당하는 채팅 기록을 로드합니다.
+    
+    Args:
+        session_id: 사용자 세션 ID
+        max_messages: 최대 로드할 메시지 수 (가장 최근 메시지 기준)
+    """
+    chat_history_path = get_chat_history_path(session_id)
+    if os.path.exists(chat_history_path):
         try:
-            if session_stores[session_id]["index"] is not None:
-                faiss.write_index(session_stores[session_id]["index"], index_path)
-            with open(doc_store_path, 'wb') as f:
-                pickle.dump(session_stores[session_id]["doc_store"], f)
+            with open(chat_history_path, 'r', encoding='utf-8') as f:
+                messages = json.load(f)
+                # 최신 메시지 순으로 정렬 후 최대 개수만큼 반환
+                messages.sort(key=lambda x: x.get('timestamp', 0), reverse=True)
+                return messages[:max_messages]
         except Exception as e:
-            print(f"[ERROR] 세션 저장소 저장 실패: {e}")
+            logger.error(f"채팅 기록 로드 실패: {e}")
+            # 손상된 파일 백업
+            try:
+                backup_path = f"{chat_history_path}.bak.{int(time.time())}"
+                shutil.copy2(chat_history_path, backup_path)
+                logger.info(f"손상된 채팅 기록 백업: {backup_path}")
+            except Exception as backup_error:
+                logger.error(f"채팅 기록 백업 실패: {backup_error}")
+    return []
 
-# 임베딩 함수는 vector_db.py에서 가져옴
+async def save_chat_history(session_id: str, messages: List[Dict[str, Any]]) -> None:
+    """채팅 기록을 파일에 저장합니다.
+    
+    Args:
+        session_id: 사용자 세션 ID
+        messages: 저장할 메시지 목록
+    """
+    if not messages:
+        return
+        
+    chat_history_path = get_chat_history_path(session_id)
+    temp_path = f"{chat_history_path}.tmp"
+    
+    try:
+        # 기존 파일이 있으면 백업
+        if os.path.exists(chat_history_path):
+            backup_path = f"{chat_history_path}.bak"
+            shutil.copy2(chat_history_path, backup_path)
+        
+        # 임시 파일에 저장
+        with open(temp_path, 'w', encoding='utf-8') as f:
+            json.dump(messages, f, ensure_ascii=False, indent=2, ensure_ascii=False)
+        
+        # 임시 파일을 원본으로 이동 (원자적 연산)
+        shutil.move(temp_path, chat_history_path)
+        
+        # 파일 권한 설정
+        os.chmod(chat_history_path, 0o666)
+        
+    except Exception as e:
+        logger.error(f"채팅 기록 저장 실패: {e}")
+        # 임시 파일이 남아있으면 삭제
+        if os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except:
+                pass
+        raise
+
+router = APIRouter()
+
+openai.api_key = settings.OPENAI_API_KEY
+client = OpenAI(api_key=settings.OPENAI_API_KEY)
+
 async def get_embedding_async(text: str) -> Optional[List[float]]:
     """텍스트를 임베딩으로 변환"""
     try:
@@ -73,153 +171,167 @@ async def get_embedding_async(text: str) -> Optional[List[float]]:
         print(f"[ERROR] 임베딩 생성 실패: {e}")
         return None
 
-router = APIRouter()
-
-openai.api_key = settings.OPENAI_API_KEY
-client = OpenAI(api_key=settings.OPENAI_API_KEY)
-
 @router.post("/chat/stream")
-async def chat_stream(request: Request):
-    data = await request.json()
-    message = data.get("message", "")
-    
-    # 세션 ID 가져오기
-    session_id = get_or_create_session_id(request)
-    session_store = get_or_create_session_store(session_id)
-    
-    # 세션별 인덱스와 문서 저장소
-    index = session_store["index"]
-    doc_store = session_store["doc_store"]
-    
-    # 🔍 질문을 벡터화하고 관련 문단 검색
-    context_text = ""
-    referenced_docs = []
-    
-    if index is not None and index.ntotal > 0:
-        query_embedding = await get_embedding_async(message)
-        if query_embedding is None:
-            print("[ERROR] 쿼리 임베딩 생성 실패")
-            return StreamingResponse(event_stream(), media_type="text/event-stream")
+async def chat_stream(
+    request: Request,
+    message: str = Form(...),
+    session_id: str = Form(...),
+    db = Depends(get_db)
+):
+    """채팅 메시지를 처리하고 스트리밍 응답을 반환합니다."""
+    try:
+        # 채팅 기록 로드 (최근 10개 메시지만 로드)
+        chat_history = await load_chat_history(session_id, max_messages=10)
         
-        print(f"[DEBUG] FAISS 인덱스 벡터 개수: {index.ntotal}")
+        # 시스템 프롬프트 설정 (없는 경우에만 추가)
+        if not any(msg.get("role") == "system" for msg in chat_history):
+            system_prompt = {
+                "role": "system",
+                "content": "You are a helpful AI assistant. Answer concisely and helpfully.",
+                "timestamp": int(time.time())
+            }
+            chat_history.insert(0, system_prompt)
+        
+        # 사용자 메시지 추가
+        user_message = {
+            "role": "user",
+            "content": message,
+            "timestamp": int(time.time())
+        }
+        chat_history.append(user_message)
+        
+        # 채팅 기록 저장 (비동기로 실행)
+        asyncio.create_task(save_chat_history(session_id, chat_history))
+        
+        # DB에 채팅 기록 저장 (비동기로 실행)
         try:
-            D, I = index.search(np.array([query_embedding], dtype='float32'), k=3)  # 상위 3개 문서 검색
-            print(f"[DEBUG] 검색 결과 인덱스: {I}, 거리: {D}")
-            
-            if I is not None and len(I[0]) > 0:
-                referenced_docs = [doc_store[i] for i in I[0] if 0 <= i < len(doc_store)]
-                print(f"[DEBUG] 검색된 문서 개수: {len(referenced_docs)}")
-                if len(referenced_docs) > 0:
-                    print(f"[DEBUG] 첫 번째 검색된 문서 내용: {referenced_docs[0]}")
-                else:
-                    print("[DEBUG] 검색된 문서가 없습니다.")
-            else:
-                print("[DEBUG] 검색 결과가 없습니다.")
-                
-        except Exception as e:
-            print(f"[ERROR] FAISS 검색 중 오류 발생: {e}")
-            return StreamingResponse(event_stream(), media_type="text/event-stream")
-    else:
-        print("[DEBUG] 인덱스에 문서가 없습니다.")
-
-    # 문서 검색 후 context_text 생성
-    context_text = "\n\n".join(referenced_docs) if referenced_docs else ""
-
-    # 개선된 시스템 프롬프트
-    # 아래 코드로 대체:
-    global new_system_prompt
-    if 'new_system_prompt' not in globals():
-        new_system_prompt = ""  # 사용자로부터 받은 새로운 시스템 프롬프트
-
-    # 이전 대화 기록을 가져오기 위한 전역 변수
-    global chat_history
-    if 'chat_history' not in globals():
-        chat_history = []
-
-    # 이전 대화 기록 추가
-    chat_history.append({"role": "user", "content": message})
-
-    if context_text or new_system_prompt:
-        system_prompt = (
-            "다음은 사용자가 업로드한 문서에서 검색된 내용입니다. 이 내용을 기반으로 사용자의 질문에 답변해주세요. "
-            "만약 내용이 질문에 답변하기에 충분하지 않다면, 그 사실을 명시하세요. "
-            "또한 답변에 사용된 문서의 특정 부분을 반드시 언급하세요.\n\n"
-            "문서 내용:\n" + context_text + "\n\n"
-            "" + new_system_prompt + ""
-            "답변에서 줄바꿈은 '\n'으로 표시하세요."
-        )
-    else:
-        system_prompt = (
-            "업로드된 문서가 없으니 일반 챗봇처럼 답변해주세요. "
-            "답변에서 줄바꿈은 '\n'으로 표시하세요."
-            "문서 내용:\n" + context_text + "\n\n"
-            "추가된 시스템 프롬프트:\n" + new_system_prompt + "\n\n"
-        )
-
-    # 이전 대화 기록을 시스템 메시지에 추가
-    messages = [{"role": "system", "content": system_prompt}] + chat_history
-
-    async def event_stream():
-        full_response = ""
-        try:
-            response = client.chat.completions.create(
-                model="gpt-4",
-                messages=messages,
-                stream=True
+            chat_record = ChatHistory(
+                session_id=session_id,
+                role="user",
+                content=message,
+                metadata=json.dumps({"source": "web"})
             )
-            for chunk in response:
-                content = getattr(chunk.choices[0].delta, "content", None)
-                if content:
-                    full_response += content
-                    yield f"data: {content}\n\n"
-                    await asyncio.sleep(0)
-
-            # 봇 응답을 대화 기록에 추가
-            chat_history.append({"role": "assistant", "content": full_response})
-
-            # 참조 문서 출력
-            if referenced_docs:
-                yield f"\n\ndata: [참고한 문단]\n\n"
-                for idx, doc in enumerate(referenced_docs, 1):
-                    yield f"data: [문단 {idx}]\n{doc}\n\n"
-
-            yield "data: \n\n[DONE]\n\n"
-
-            # 채팅 기록 저장 (비동기)
-            async def save_chat_history():
-                try:
-                    async with get_async_session(session_id) as session:
-                        chat = ChatHistory(
-                            session_id=session_id,  # 세션 ID 사용
-                            message=message,
-                            response=full_response
-                        )
-                        session.add(chat)
-                        await session.commit()
-                        
-                        # 세션 저장소 저장
-                        save_session_store(session_id)
-                except Exception as e:
-                    print(f"[ERROR] 채팅 기록 저장 실패: {e}")
+            db.add(chat_record)
+            db.commit()
+        except Exception as db_error:
+            logger.error(f"DB 저장 실패: {db_error}")
+            db.rollback()
+        
+        # OpenAI API 호출
+        response = await openai_client.chat.completions.create(
+            model=CHAT_MODEL,
+            messages=[
+                {"role": msg["role"], "content": msg["content"]} 
+                for msg in chat_history
+            ],
+            stream=True,
+            temperature=TEMPERATURE,
+            max_tokens=MAX_TOKENS
+        )
+        
+        # 스트리밍 응답 생성
+        async def generate():
+            assistant_message = []
             
-            # 비동기로 채팅 기록 저장
-            asyncio.create_task(save_chat_history())
+            # 응답 스트리밍
+            async for chunk in response:
+                if not chunk.choices:
+                    continue
+                    
+                content = chunk.choices[0].delta.content or ""
+                if content:
+                    assistant_message.append(content)
+                    # SSE 형식으로 스트리밍
+                    yield f"data: {json.dumps({'message': content})}\n\n"
+            
+            # 전체 응답을 채팅 기록에 추가
+            full_response = ''.join(assistant_message)
+            chat_history.append({
+                "role": "assistant",
+                "content": full_response,
+                "timestamp": int(time.time())
+            })
+            
+            # 채팅 기록 저장 (비동기로 실행)
+            asyncio.create_task(save_chat_history(session_id, chat_history))
+            
+            # DB에 어시스턴트 응답 저장 (비동기로 실행)
+            try:
+                assistant_record = ChatHistory(
+                    session_id=session_id,
+                    role="assistant",
+                    content=full_response,
+                    metadata=json.dumps({"source": "openai"})
+                )
+                db.add(assistant_record)
+                db.commit()
+            except Exception as db_error:
+                logger.error(f"어시스턴트 응답 DB 저장 실패: {db_error}")
+                db.rollback()
+            
+            # 종료 이벤트 전송
+            yield "event: end\ndata: {}\n\n"
+        
+        return StreamingResponse(
+            generate(),
+            media_type="text/event-stream",
+            headers={
+                'Cache-Control': 'no-cache',
+                'Connection': 'keep-alive',
+                'X-Accel-Buffering': 'no'  # Nginx 버퍼링 비활성화
+            }
+        )
+        
+    except Exception as e:
+        logger.error(f"채팅 처리 중 오류 발생: {e}", exc_info=True)
+        error_detail = {
+            "error": str(e),
+            "timestamp": datetime.datetime.now().isoformat()
+        }
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"채팅 처리 중 오류가 발생했습니다: {str(e)}",
+            headers={"X-Error-Detail": json.dumps(error_detail, ensure_ascii=False)}
+        )
 
-            # DB 저장
-            # async with async_session() as session:
-            #     chat = ChatHistory(
-            #         user_message=message,
-            #         bot_response=full_response
-            #     )
-            #     session.add(chat)
-            #     await session.commit()
-        except Exception as e:
-            import traceback
-            print("오류 발생:", e)
-            traceback.print_exc()
-            yield f"data: [ERROR] {str(e)}\n\n"
-
-    return StreamingResponse(event_stream(), media_type="text/event-stream")
+async def save_chat_history(session_id: str, messages: List[Dict[str, Any]]) -> None:
+    """채팅 기록을 파일에 저장합니다.
+    
+    Args:
+        session_id: 사용자 세션 ID
+        messages: 저장할 메시지 목록 (role, content, timestamp 포함)
+    """
+    if not messages:
+        return
+        
+    chat_history_path = get_chat_history_path(session_id)
+    temp_path = f"{chat_history_path}.tmp"
+    
+    try:
+        # 기존 파일이 있으면 백업
+        if os.path.exists(chat_history_path):
+            backup_path = f"{chat_history_path}.bak"
+            shutil.copy2(chat_history_path, backup_path)
+        
+        # 임시 파일에 저장
+        with open(temp_path, 'w', encoding='utf-8') as f:
+            json.dump(messages, f, ensure_ascii=False, indent=2)
+        
+        # 임시 파일을 원본으로 이동 (원자적 연산)
+        shutil.move(temp_path, chat_history_path)
+        
+        # 파일 권한 설정
+        os.chmod(chat_history_path, 0o666)
+        
+    except Exception as e:
+        logger.error(f"채팅 기록 저장 실패: {e}")
+        # 임시 파일이 남아있으면 삭제
+        if os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except:
+                pass
+        raise
 
 @router.post("/chat/add_prompt")
 async def add_prompt(request: Request):
