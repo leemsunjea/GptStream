@@ -10,82 +10,120 @@ from db.models import ChatHistory
 from db.database import async_session
 from app.vector_db import get_embedding_async as get_embedding, index, doc_store  # vector 연동
 from openai import OpenAI
-from sqlalchemy import select
 
 router = APIRouter()
 
 openai.api_key = settings.OPENAI_API_KEY
 client = OpenAI(api_key=settings.OPENAI_API_KEY)
 
+system_prompt = "당신은 유능한 비서입니다. 사용자의 질문에 성실히 답변해주세요."
+
 @router.post("/chat/stream")
 async def chat_stream(request: Request):
     data = await request.json()
     message = data.get("message", "")
-    chat_id = data.get("chatId", "default")
 
-    # 이전 대화 기록 불러오기
-    async with async_session() as session:
-        previous_chats = await session.execute(
-            select(ChatHistory).where(ChatHistory.chat_id == chat_id).order_by(ChatHistory.created_at)
+    # 🔍 질문을 벡터화하고 관련 문단 검색
+    context_text = ""
+    referenced_docs = []
+    if index.ntotal > 0:
+        query_embedding = await get_embedding(message)
+        if query_embedding is None:
+            print("[ERROR] 쿼리 임베딩 생성 실패")
+            return StreamingResponse(event_stream(), media_type="text/event-stream")
+        
+        print(f"[DEBUG] FAISS 인덱스 벡터 개수: {index.ntotal}")
+        try:
+            D, I = index.search(np.array([query_embedding]), k=3)  # 상위 7개 문서 검색
+            print(f"[DEBUG] 검색 결과 인덱스: {I}, 거리: {D}")
+        except Exception as e:
+            print(f"[ERROR] FAISS 검색 중 오류 발생: {e}")
+            return StreamingResponse(event_stream(), media_type="text/event-stream")
+        
+        if I is not None and len(I[0]) > 0:
+            referenced_docs = [doc_store[i] for i in I[0] if i >= 0 and i < len(doc_store)]
+            print(f"[DEBUG] 검색된 문서 개수: {len(referenced_docs)}")
+            if len(referenced_docs) > 0:
+                print(f"[DEBUG] 첫 번째 검색된 문서 내용: {referenced_docs[0]}")  # [:100] 제거
+            else:
+                print("[DEBUG] 검색된 문서가 없습니다.")
+        else:
+            print("[DEBUG] 검색 결과가 없습니다.")
+    else:
+        print("[DEBUG] 인덱스에 문서가 없습니다.")
+
+    # 문서 검색 후 context_text 생성
+    context_text = "\n\n".join(referenced_docs) if referenced_docs else ""
+
+    # 개선된 시스템 프롬프트
+    if context_text:
+        system_prompt = (
+            "다음은 사용자가 업로드한 문서에서 검색된 내용입니다. 이 내용을 기반으로 사용자의 질문에 답변해주세요. "
+            "만약 내용이 질문에 답변하기에 충분하지 않다면, 그 사실을 명시하세요. "
+            "또한 답변에 사용된 문서의 특정 부분을 반드시 언급하세요.\n\n"
+            "문서 내용:\n" + context_text + "\n\n"
+            "답변에서 줄바꿈은 '\n'으로 표시하세요."
         )
-        chat_history = previous_chats.scalars().all()
-
-    # 대화 기록을 시스템 프롬프트에 추가
-    history_text = "\n".join([f"User: {chat.user_message}\nBot: {chat.bot_response}" for chat in chat_history])
-    system_prompt = (
-        f"이것은 {chat_id} 챗봇입니다. 이전 대화 기록을 참고하여 답변하세요.\n\n"
-        f"대화 기록:\n{history_text}\n\n"
-        "사용자의 질문에 답변해주세요."
-    )
+    else:
+        system_prompt = (
+            "업로드된 문서가 없으니 일반 챗봇처럼 답변해주세요. "
+            "답변에서 줄바꿈은 '\n'으로 표시하세요."
+        )
 
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": message}
     ]
 
-    # OpenAI API 호출
-    response = await client.chat_completions.create(
-        model="gpt-3.5-turbo",
-        messages=messages,
-        stream=True
-    )
+    async def event_stream():
+        full_response = ""
+        try:
+            response = client.chat.completions.create(
+                model="gpt-4",  # 올바른 모델 이름으로 수정
+                messages=messages,
+                stream=True
+            )
+            for chunk in response:
+                content = getattr(chunk.choices[0].delta, "content", None)
+                if content:
+                    full_response += content
+                    yield f"data: {content}\n\n"
+                    await asyncio.sleep(0)
 
-    # 응답 저장
-    bot_response = ""
-    async for chunk in response:
-        if "content" in chunk.choices[0].delta:
-            bot_response += chunk.choices[0].delta.content
+            # 참조 문서 출력
+            if referenced_docs:
+                yield f"\n\ndata: [참고한 문단]\n\n"
+                for idx, doc in enumerate(referenced_docs, 1):
+                    yield f"data: [문단 {idx}]\n{doc}\n\n"
 
-    async with async_session() as session:
-        async with session.begin():
-            session.add(ChatHistory(chat_id=chat_id, user_message=message, bot_response=bot_response))
+            yield "data: \n\n[DONE]\n\n"
 
-    return StreamingResponse(event_stream(bot_response), media_type="text/event-stream")
+            # DB 저장
+            async with async_session() as session:
+                chat = ChatHistory(
+                    user_message=message,
+                    bot_response=full_response
+                )
+                session.add(chat)
+                await session.commit()
+        except Exception as e:
+            import traceback
+            print("오류 발생:", e)
+            traceback.print_exc()
+            yield f"data: [ERROR] {str(e)}\n\n"
 
-async def event_stream(bot_response):
-    yield f"data: {bot_response}\n"
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
 
-@router.post("/chat/update_system_prompt")
-async def update_system_prompt(request: Request):
+@router.post("/chat/add_system_prompt")
+async def add_system_prompt(request: Request):
     data = await request.json()
     new_prompt = data.get("prompt", "")
-    chat_id = "system_prompt"  # 고정된 chat_id 사용
 
     if not new_prompt:
-        return {"error": "프롬프트 내용이 비어 있습니다."}
+        return {"success": False, "message": "프롬프트 내용이 비어 있습니다."}
 
-    # 새로운 프롬프트 저장
-    async with async_session() as session:
-        async with session.begin():
-            session.add(ChatHistory(chat_id=chat_id, user_message=new_prompt, bot_response=""))
+    # 기존 시스템 프롬프트에 새 프롬프트 추가
+    global system_prompt
+    system_prompt += f"\n\n{new_prompt}"
 
-    # 이전 프롬프트 불러오기
-    async with async_session() as session:
-        previous_prompts = await session.execute(
-            select(ChatHistory).where(ChatHistory.chat_id == chat_id).order_by(ChatHistory.created_at)
-        )
-        prompts = previous_prompts.scalars().all()
-
-    prompt_texts = [prompt.user_message for prompt in prompts]
-
-    return {"prompts": prompt_texts}
+    return {"success": True, "message": "프롬프트가 성공적으로 추가되었습니다.", "current_prompt": system_prompt}

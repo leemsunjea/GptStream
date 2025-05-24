@@ -501,13 +501,12 @@
       const sendButton2 = document.getElementById("sendButton-2");
 
       // 메시지 추가 함수
-      function appendMessage(role, message, chatBoxInstance) {
+      function appendMessage(role, message) {
         const msg = document.createElement("div");
         msg.classList.add("message", role);
         msg.textContent = message;
-        chatBoxInstance.appendChild(msg);
-        chatBoxInstance.scrollTop = chatBoxInstance.scrollHeight;
-        return msg;
+        chatBox2.appendChild(msg);
+        chatBox2.scrollTop = chatBox2.scrollHeight;
       }
 
       // 시스템 프롬프트 업데이트 함수
@@ -516,10 +515,10 @@
         if (!message) return;
 
         input2.value = "";
-        appendMessage("user", "시스템 프롬프트가 추가되었습니다.", chatBox2);
+        appendMessage("user", "시스템 프롬프트가 추가되었습니다.");
 
         try {
-          const response = await fetch(`/chat/update_system_prompt`, {
+          const response = await fetch("/chat/add_system_prompt", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ prompt: message })
@@ -531,12 +530,10 @@
 
           const data = await response.json();
           chatBox2.innerHTML = ""; // 기존 메시지 초기화
-          data.prompts.forEach(prompt => {
-            appendMessage("bot", prompt, chatBox2);
-          });
+          appendMessage("bot", data.current_prompt);
         } catch (err) {
           console.error("업데이트 오류:", err);
-          appendMessage("bot", "오류가 발생했습니다. 다시 시도해주세요.", chatBox2);
+          appendMessage("bot", "오류가 발생했습니다. 다시 시도해주세요.");
         }
       }
 
