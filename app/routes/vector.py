@@ -10,15 +10,12 @@ from app.vector_db import get_embedding_async, split_text_to_paragraphs, doc_sto
 import asyncio
 import uuid
 from asyncio import Lock
-import logging
 
 router = APIRouter()
 upload_dir = "/tmp/temp_uploads"
 task_statuses = {}
 doc_store_lock = Lock()
 index_lock = Lock()
-
-logging.basicConfig(level=logging.DEBUG)
 
 async def save_upload_file(file: UploadFile, upload_dir: str):
     os.makedirs(upload_dir, exist_ok=True)
