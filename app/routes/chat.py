@@ -33,13 +33,12 @@ BASE_SYSTEM_PROMPT_TEMPLATE = """
 async def chat_stream(request: Request, x_user_id: str = Header(..., description="클라이언트 UUID")):
     data = await request.json()
     message = data.get("message", "")
-    global _default_system_prompt_cache
 
     openai_chat_history_list = []
-    user_system_prompt_content = "" # 사용자가 설정한 프롬프트 또는 기본 프롬프트 내용
+    user_system_prompt_content = ""
 
     async with async_session() as session:
-        # 1. 사용자 시스템 프롬프트 또는 기본 시스템 프롬프트 가져오기
+        # 1. 사용자별 시스템 프롬프트 가져오기
         user_pref_result = await session.execute(
             select(UserPreference).where(UserPreference.user_id == x_user_id)
         )
@@ -49,22 +48,9 @@ async def chat_stream(request: Request, x_user_id: str = Header(..., description
             user_system_prompt_content = user_pref.system_prompt
             print(f"[DEBUG] 사용자 {x_user_id}의 맞춤 시스템 프롬프트 적용: '{user_system_prompt_content}'")
         else:
-            if _default_system_prompt_cache:
-                user_system_prompt_content = _default_system_prompt_cache
-                print(f"[DEBUG] 사용자 {x_user_id}에게 캐시된 기본 시스템 프롬프트 적용: '{user_system_prompt_content}'")
-            else:
-                default_prompt_result = await session.execute(
-                    select(UserPreference).where(UserPreference.user_id == "default_system").order_by(UserPreference.id)
-                )
-                default_prompt_db = default_prompt_result.scalars().first()
-                if default_prompt_db and default_prompt_db.system_prompt:
-                    user_system_prompt_content = default_prompt_db.system_prompt
-                    _default_system_prompt_cache = user_system_prompt_content
-                    print(f"[DEBUG] 사용자 {x_user_id}에게 DB 기본 프롬프트 적용 및 캐시 저장: '{user_system_prompt_content}'")
-                else:
-                    user_system_prompt_content = "You are a friendly and helpful AI assistant."
-                    _default_system_prompt_cache = user_system_prompt_content
-                    print(f"[DEBUG] 사용자 {x_user_id}에게 최후의 기본 시스템 프롬프트 적용 및 캐시 저장: '{user_system_prompt_content}'")
+            # 기본 프롬프트 설정 (캐시 대신 직접 정의)
+            user_system_prompt_content = "You are a friendly and helpful AI assistant."
+            print(f"[DEBUG] 사용자 {x_user_id}에게 기본 시스템 프롬프트 적용: '{user_system_prompt_content}'")
 
         # 2. 이전 대화 기록 가져오기
         previous_chats_result = await session.execute(
@@ -83,28 +69,19 @@ async def chat_stream(request: Request, x_user_id: str = Header(..., description
 
     openai_chat_history_list.append({"role": "user", "content": message})
 
+    # 문서 검색 및 참조 처리 (기존 로직 유지)
     context_text_for_prompt = ""
     referenced_docs_for_response_display = []
     if index.ntotal > 0:
         retrieved_documents = await search_similar_documents(message, x_user_id)
         if retrieved_documents:
             print(f"[DEBUG] 사용자 {x_user_id}에 대해 검색된 관련 문서 수: {len(retrieved_documents)}")
-            if len(retrieved_documents) > 0:
-                print(f"[DEBUG] 사용자 {x_user_id}의 첫 번째 검색된 문서 내용 (일부): {retrieved_documents[0][:100]}...")
-            # OpenAI 프롬프트에는 \\n을 그대로 사용 (모델이 \\n을 보고 줄바꿈으로 인식하도록)
-            context_text_for_prompt = "\\n".join(retrieved_documents) 
+            context_text_for_prompt = "\\n".join(retrieved_documents)
             referenced_docs_for_response_display = retrieved_documents
-        else:
-            print(f"[DEBUG] 사용자 {x_user_id}에 대해 관련 문서를 찾지 못했습니다.")
-    else:
-        print(f"[DEBUG] 인덱스에 문서가 없습니다. 사용자 {x_user_id}에 대한 검색을 건너뜁니다.")
 
     reference_document_section_content = ""
     if context_text_for_prompt:
         reference_document_section_content = f"""다음은 사용자가 업로드한 문서에서 현재 대화와 관련성이 높은 내용입니다. 이 내용을 최우선으로 참고하여 사용자의 질문에 답변해주세요.
-만약 이 내용만으로 답변이 부족하다면, 그 사실을 명확히 밝히고 일반적인 지식을 활용할 수 있습니다.
-답변 시, 어떤 문서 내용을 참고했는지 간략히 언급하면 좋습니다.
-
 [참고 문서 내용 시작]
 {context_text_for_prompt}
 [참고 문서 내용 끝]
@@ -116,7 +93,7 @@ async def chat_stream(request: Request, x_user_id: str = Header(..., description
         user_specific_prompt_or_default=user_system_prompt_content,
         reference_document_section=reference_document_section_content
     ).strip()
-    
+
     print(f"[DEBUG] 최종 시스템 프롬프트 (사용자 {x_user_id}):\\n{final_system_prompt}")
 
     messages_to_send_to_openai = [{"role": "system", "content": final_system_prompt}] + openai_chat_history_list
