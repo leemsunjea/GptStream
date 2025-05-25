@@ -499,13 +499,8 @@
                 if (content === "[DONE]") {
                   isDone = true;
                 } else if (content.startsWith("[참고한 문단]") || content.startsWith("[문단 ")) {
-                  if (!refDiv) {
-                    refDiv = document.createElement("div");
-                    refDiv.classList.add("message", "bot");
-                    chatBox.appendChild(refDiv);
-                  }
                   references += content + "\n";
-                  refDiv.textContent = references;
+                  appendSystemLog(content); // 시스템 로그에 출력
                 } else if (!isDone) {
                   partial += content;
                   if (!lastBotDiv) {
