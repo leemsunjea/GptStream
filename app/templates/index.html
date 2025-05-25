@@ -524,9 +524,25 @@
         const formData = new FormData();
         formData.append("file", file);
 
+        let userId = localStorage.getItem("userId"); // userId 가져오기
+        if (!userId) {
+          // userId가 없는 경우에 대한 처리 (예: 에러 메시지 또는 새로 생성)
+          // 여기서는 sendMessage와 유사하게 userId를 생성하도록 할 수 있으나,
+          // 일반적으로 업로드 전에 사용자가 식별되어야 합니다.
+          // 이 예제에서는 userId가 있다고 가정하고 진행합니다. (실제로는 로그인/세션 관리가 필요)
+          // 만약 userId가 없다면, 아래 fetch 호출 전에 생성하거나 사용자에게 알림을 표시해야 합니다.
+          // 임시로, userId가 없으면 새로 생성하는 로직을 추가 (채팅과 동일하게)
+          userId = crypto.randomUUID();
+          localStorage.setItem("userId", userId);
+          appendSystemLog("새로운 userId 생성 (PDF 업로드용): " + userId);
+        }
+
         try {
           const response = await fetch(`${API_BASE}/upload_pdf`, {
             method: "POST",
+            headers: { // 헤더 추가
+              "x-user-id": userId
+            },
             body: formData
           });
 

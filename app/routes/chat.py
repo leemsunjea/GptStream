@@ -8,7 +8,7 @@ import numpy as np
 from app.config import settings
 from db.models import ChatHistory, UserPreference # UserPreference 임포트 추가
 from db.database import async_session
-from app.vector_db import get_embedding_async as get_embedding, index, doc_store  # vector 연동
+from app.vector_db import get_embedding_async as get_embedding, index, doc_store, search_similar_documents # search_similar_documents 추가
 from openai import OpenAI
 from sqlalchemy import func, select
 
@@ -17,42 +17,61 @@ router = APIRouter()
 openai.api_key = settings.OPENAI_API_KEY
 client = OpenAI(api_key=settings.OPENAI_API_KEY)
 
+# Global cache for default system prompt
+_default_system_prompt_cache = None
+
 @router.post("/chat/stream")
 async def chat_stream(request: Request, x_user_id: str = Header(..., description="클라이언트 UUID")):
     data = await request.json()
     message = data.get("message", "")
+    global _default_system_prompt_cache # Declare usage of global variable
 
     openai_chat_history_list = []
     user_system_prompt = "" # 사용자별 시스템 프롬프트를 저장할 변수
 
     async with async_session() as session:
-        # 사용자별 시스템 프롬프트 조회
-        user_pref_result = await session.execute(
+        # 사용자별 시스템 프롬프트 조회와 이전 대화 기록 조회를 병렬로 실행
+        user_pref_task = session.execute(
             select(UserPreference).where(UserPreference.user_id == x_user_id)
         )
+        # 이전 대화 기록 조회 시 최근 20개로 제한하고, 시간 역순으로 가져온 뒤 다시 정순으로 변경
+        previous_chats_task = session.execute(
+            select(ChatHistory)
+            .where(ChatHistory.user_id == x_user_id)
+            .order_by(ChatHistory.created_at.desc())
+            .limit(20) # 최근 20개 메시지 제한
+        )
+
+        user_pref_result, previous_chats_result = await asyncio.gather(
+            user_pref_task,
+            previous_chats_task
+        )
+
         user_pref = user_pref_result.scalars().first()
         if user_pref and user_pref.system_prompt:
             user_system_prompt = user_pref.system_prompt
         else:
-            # 사용자 정의 프롬프트가 없으면, 'default_system' 프롬프트를 조회
-            default_prompt_result = await session.execute(
-                select(UserPreference).where(UserPreference.user_id == "default_system").order_by(UserPreference.id) # 첫번째 기본 프롬프트를 가져오기 위해 정렬
-            )
-            default_prompt = default_prompt_result.scalars().first()
-            if default_prompt and default_prompt.system_prompt:
-                user_system_prompt = default_prompt.system_prompt
-                print(f"[DEBUG] 사용자 {x_user_id}에게 기본 시스템 프롬프트 적용: '{user_system_prompt}'")
+            if _default_system_prompt_cache: # 캐시 확인
+                user_system_prompt = _default_system_prompt_cache
+                print(f"[DEBUG] 사용자 {x_user_id}에게 캐시된 기본 시스템 프롬프트 적용: '{user_system_prompt}'")
             else:
-                # DB에도 기본 프롬프트가 없으면 최후의 기본값 사용
-                user_system_prompt = "You are a helpful assistant." 
-                print(f"[DEBUG] 사용자 {x_user_id}에게 최후의 기본 시스템 프롬프트 적용: '{user_system_prompt}'")
+                # 사용자 정의 프롬프트가 없으면, 'default_system' 프롬프트를 조회
+                default_prompt_result = await session.execute(
+                    select(UserPreference).where(UserPreference.user_id == "default_system").order_by(UserPreference.id) # 첫번째 기본 프롬프트를 가져오기 위해 정렬
+                )
+                default_prompt = default_prompt_result.scalars().first()
+                if default_prompt and default_prompt.system_prompt:
+                    user_system_prompt = default_prompt.system_prompt
+                    _default_system_prompt_cache = user_system_prompt # 캐시에 저장
+                    print(f"[DEBUG] 사용자 {x_user_id}에게 DB 기본 시스템 프롬프트 적용 및 캐시 저장: '{user_system_prompt}'")
+                else:
+                    # DB에도 기본 프롬프트가 없으면 최후의 기본값 사용
+                    user_system_prompt = "You are a helpful assistant."
+                    _default_system_prompt_cache = user_system_prompt # 캐시에 저장
+                    print(f"[DEBUG] 사용자 {x_user_id}에게 최후의 기본 시스템 프롬프트 적용 및 캐시 저장: '{user_system_prompt}'")
 
-        previous_chats_result = await session.execute(
-            select(ChatHistory)
-            .where(ChatHistory.user_id == x_user_id)
-            .order_by(ChatHistory.created_at)
-        )
         db_previous_chats = previous_chats_result.scalars().all()
+        db_previous_chats.reverse() # OpenAI에 전달하기 위해 다시 시간 순으로 정렬
 
         for chat_entry in db_previous_chats:
             openai_chat_history_list.append({"role": "user", "content": chat_entry.user_message})
@@ -66,43 +85,21 @@ async def chat_stream(request: Request, x_user_id: str = Header(..., description
     context_text = ""
     referenced_docs = []
     if index.ntotal > 0:
-        query_embedding = await get_embedding(message)
-        if query_embedding is None:
-            print("[ERROR] 쿼리 임베딩 생성 실패")
-            # event_stream 함수를 직접 호출할 수 없으므로, 빈 스트림 응답을 위한 간단한 처리가 필요할 수 있습니다.
-            # 여기서는 일단 에러 상황을 가정하고 빈 응답을 생성하는 더미 event_stream을 가정합니다.
-            # 실제로는 이 부분에서 StreamingResponse를 바로 반환하거나, event_stream 내부에서 처리해야 합니다.
-            async def dummy_event_stream_on_error():
-                yield f"data: [ERROR] 쿼리 임베딩 생성 실패\n\n"
-                yield f"data: \n\n[DONE]\n\n"
-            return StreamingResponse(dummy_event_stream_on_error(), media_type="text/event-stream")
-
-        print(f"[DEBUG] FAISS 인덱스 벡터 개수: {index.ntotal}")
-        try:
-            D, I = index.search(np.array([query_embedding]), k=3)
-            print(f"[DEBUG] 검색 결과 인덱스: {I}, 거리: {D}")
-        except Exception as e:
-            print(f"[ERROR] FAISS 검색 중 오류 발생: {e}")
-            async def dummy_event_stream_on_faiss_error():
-                yield f"data: [ERROR] FAISS 검색 중 오류: {str(e)}\n\n"
-                yield f"data: \n\n[DONE]\n\n"
-            return StreamingResponse(dummy_event_stream_on_faiss_error(), media_type="text/event-stream")
-
-        if I is not None and len(I[0]) > 0:
-            referenced_docs = [doc_store[i] for i in I[0] if i >= 0 and i < len(doc_store)]
-            print(f"[DEBUG] 검색된 문서 개수: {len(referenced_docs)}")
+        # search_similar_documents 함수에 x_user_id 전달
+        referenced_docs = await search_similar_documents(message, x_user_id)
+        if referenced_docs:
+            print(f"[DEBUG] 사용자 {x_user_id}에 대해 검색된 관련 문서 수: {len(referenced_docs)}")
             if len(referenced_docs) > 0:
-                print(f"[DEBUG] 첫 번째 검색된 문서 내용: {referenced_docs[0]}")  # [:100] 제거
-            else:
-                print("[DEBUG] 검색된 문서가 없습니다.")
+                print(f"[DEBUG] 사용자 {x_user_id}의 첫 번째 검색된 문서 내용: {referenced_docs[0][:100]}...") # 로그 개선
+            context_text = "\n\n".join(referenced_docs)
         else:
-            print("[DEBUG] 검색 결과가 없습니다.")
+            print(f"[DEBUG] 사용자 {x_user_id}에 대해 관련 문서를 찾지 못했습니다.")
     else:
-        print("[DEBUG] 인덱스에 문서가 없습니다.")
-    context_text = "\n\n".join(referenced_docs) if referenced_docs else ""
+        print(f"[DEBUG] 인덱스에 문서가 없습니다. 사용자 {x_user_id}에 대한 검색을 건너뜁니다.")
+    # context_text = "\n\n".join(referenced_docs) if referenced_docs else "" # 이미 위에서 처리됨
 
     # 4. 시스템 프롬프트 설정 (사용자별 프롬프트 사용)
-    context_text = "\\n\\n".join(referenced_docs) if referenced_docs else ""
+    # context_text = "\\n\\n".join(referenced_docs) if referenced_docs else "" # 이미 위에서 처리됨
 
     # 전역 new_system_prompt 대신 user_system_prompt 사용
     if context_text or user_system_prompt: # new_system_prompt 대신 user_system_prompt 사용
@@ -128,7 +125,7 @@ async def chat_stream(request: Request, x_user_id: str = Header(..., description
         full_response_content = ""
         try:
             openai_response_stream = client.chat.completions.create(
-                model="gpt-4",
+                model="gpt-3.5-turbo",  # 모델을 "gpt-4"에서 "gpt-3.5-turbo"로 변경
                 messages=messages_to_send_to_openai,
                 stream=True
             )

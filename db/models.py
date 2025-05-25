@@ -20,6 +20,7 @@ documents = Table(
     "documents",
     metadata,
     Column("id", Integer, primary_key=True),
+    Column("user_id", String, nullable=False, index=True), # user_id 컬럼 추가 및 인덱스 설정
     Column("pdf_name", String),
     Column("page_number", Integer),
     Column("content", Text),
@@ -29,6 +30,7 @@ embeddings = Table(
     "embeddings",
     metadata,
     Column("id", Integer, primary_key=True),
+    Column("user_id", String, nullable=False, index=True), # user_id 컬럼 추가 및 인덱스 설정
     Column("document_id", Integer, ForeignKey("documents.id")),
     Column("embedding", LargeBinary),
 )

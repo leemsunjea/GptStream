@@ -4,7 +4,7 @@ import faiss
 import numpy as np
 from dotenv import load_dotenv
 from db.database import async_session
-from sqlalchemy import select
+from sqlalchemy import select, text
 from db.models import documents, embeddings
 from app.config import settings
 from openai import OpenAI
@@ -19,46 +19,63 @@ index = faiss.IndexFlatL2(dimension)
 doc_store = []  # 전역 변수로 선언된 문서 저장소
 
 async def load_faiss_and_docstore():
-    global doc_store  # 전역 변수 사용 명시
-    embeddings_list = []
+    global doc_store, index
+    print("[INFO] Loading FAISS index and document store...")
+    new_doc_store = []
+    embedding_vectors = []
+
     async with async_session() as session:
-        # 문서 내용 로드
-        try:
-            docs = await session.execute(select(documents.c.content).order_by(documents.c.id))
-            doc_store.clear()  # 기존 데이터 초기화
-            doc_store.extend([row[0] for row in docs.fetchall()])
-            print(f"[DEBUG] 문서 개수: {len(doc_store)}")
-            if len(doc_store) > 0:
-                print(f"[DEBUG] 첫 번째 문서 내용: {doc_store[0][:100]}")
-            else:
-                print("[DEBUG] 문서 데이터가 없습니다.")
-        except Exception as e:
-            print(f"[ERROR] 문서 로드 중 오류 발생: {e}")
+        # 모든 문서 및 해당 user_id 가져오기
+        stmt_docs = select(documents.c.id, documents.c.user_id, documents.c.content).order_by(documents.c.id)
+        result_docs = await session.execute(stmt_docs)
+        all_db_documents = result_docs.fetchall()
 
-        # 임베딩 데이터 로드
-        try:
-            embs = await session.execute(select(embeddings.c.embedding).order_by(embeddings.c.id))
-            embeddings_list = [np.frombuffer(row[0], dtype=np.float32) for row in embs.fetchall()]
-            print(f"[DEBUG] 임베딩 개수: {len(embeddings_list)}")
-            if len(embeddings_list) > 0:
-                print(f"[DEBUG] 첫 번째 임베딩 데이터: {embeddings_list[0][:5]}")
-            else:
-                print("[DEBUG] 임베딩 데이터가 없습니다.")
-        except Exception as e:
-            print(f"[ERROR] 임베딩 로드 중 오류 발생: {e}")
+        if not all_db_documents:
+            print("[INFO] 데이터베이스에 문서가 없습니다.")
+            doc_store = []
+            if index.ntotal > 0: # 문서가 없고 인덱스에 데이터가 남아있다면 인덱스 초기화
+                index.reset()
+            return index, doc_store
 
-    # FAISS 인덱스에 데이터 추가
-    if embeddings_list:
-        try:
-            index.add(np.stack(embeddings_list))
-            print(f"[DEBUG] FAISS 인덱스에 추가된 벡터 개수: {index.ntotal}")
-        except Exception as e:
-            print(f"[ERROR] FAISS 인덱스 추가 중 오류 발생: {e}")
+        # 각 문서에 대해 문단으로 분할하고 해당 임베딩 가져오기
+        for doc_id, user_id, page_content in all_db_documents:
+            if not page_content: # 페이지 내용이 비어있다면 건너뜀
+                print(f"[DEBUG] doc_id {doc_id}은(는) 페이지 내용이 비어있어 건너뜁니다.")
+                continue
+            paragraphs = split_text_to_paragraphs(page_content)
+
+            # 문단에 대한 임베딩 가져오기
+            stmt_embs = select(embeddings.c.embedding).where(embeddings.c.document_id == doc_id).order_by(embeddings.c.id)
+            result_embs = await session.execute(stmt_embs)
+            paragraph_embeddings_bytes = [row[0] for row in result_embs.fetchall()]
+
+            if len(paragraphs) != len(paragraph_embeddings_bytes):
+                print(f"[WARNING] doc_id {doc_id}에 대해 문단 수({len(paragraphs)})와 임베딩 수({len(paragraph_embeddings_bytes)}) 불일치. 해당 문서는 건너뜁니다.")
+                continue
+
+            for i, para_text in enumerate(paragraphs):
+                new_doc_store.append({
+                    'text': para_text,
+                    'user_id': user_id,
+                    'doc_id': doc_id # 원본 문서 ID
+                })
+                embedding_bytes = paragraph_embeddings_bytes[i]
+                embedding_vectors.append(np.frombuffer(embedding_bytes, dtype=np.float32))
+
+    if new_doc_store and embedding_vectors:
+        doc_store = new_doc_store # 전역 doc_store에 할당
+        index.reset() # 기존 인덱스 초기화
+        index.add(np.stack(embedding_vectors))
+        print(f"[INFO] FAISS 인덱스에 {index.ntotal} 벡터 로드 완료. 문서 저장소 크기: {len(doc_store)}")
+        if doc_store:
+            print(f"[DEBUG] doc_store의 첫 번째 항목: user_id={doc_store[0].get('user_id')}, doc_id={doc_store[0].get('doc_id')}, text='{doc_store[0].get('text', '')[:50]}...'")
     else:
-        print("[DEBUG] FAISS 인덱스가 비어 있습니다. 데이터가 추가되지 않았습니다.")
-    return index, doc_store
+        doc_store = []
+        if index.ntotal > 0:
+            index.reset()
+        print("[INFO] FAISS 인덱스에 임베딩이 로드되지 않았습니다. 문서 저장소가 비어 있습니다.")
 
-# 나머지 함수 (get_embedding_async, split_text_to_paragraphs, search_similar_documents 등)는 그대로 유지
+    return index, doc_store
 
 async def get_embedding_async(text: str) -> Optional[np.ndarray]:
     try:
@@ -89,35 +106,41 @@ async def pollTaskStatus(task_id, api_base, append_system_log):
                         append_system_log(msg)
         await asyncio.sleep(5)  # 5초마다 상태 확인
 
-# The following block should be inside a function, not at the module level.
-# Example: wrap it in an async function for later use.
-
-async def search_similar_documents(message):
-    if index.ntotal > 0:
-        query_embedding = await get_embedding_async(message)
-        if query_embedding is None:
-            print("[ERROR] 쿼리 임베딩 생성 실패")
-            return None
-        
-        print(f"[DEBUG] FAISS 인덱스 벡터 개수: {index.ntotal}")
-        try:
-            D, I = index.search(np.array([query_embedding]), k=3)  # 상위 7개 문서 검색
-            print(f"[DEBUG] 검색 결과 인덱스: {I}, 거리: {D}")
-        except Exception as e:
-            print(f"[ERROR] FAISS 검색 중 오류 발생: {e}")
-            return None
-        
-        if I is not None and len(I[0]) > 0:
-            referenced_docs = [doc_store[i] for i in I[0] if i >= 0 and i < len(doc_store)]
-            print(f"[DEBUG] 검색된 문서 개수: {len(referenced_docs)}")
-            if len(referenced_docs) > 0:
-                print(f"[DEBUG] 첫 번째 검색된 문서 내용: {referenced_docs[0][:100]}")  # 첫 번째 문서 일부 출력
-            else:
-                print("[DEBUG] 검색된 문서가 없습니다.")
-            return referenced_docs
-        else:
-            print("[DEBUG] 검색 결과가 없습니다.")
-            return []
-    else:
-        print("[DEBUG] 인덱스에 데이터가 없습니다.")
+async def search_similar_documents(message: str, user_id: str): # user_id 매개변수 추가
+    if index.ntotal == 0:
+        print(f"[DEBUG] 인덱스가 비어 있습니다. 사용자 {user_id}에 대한 검색 문서가 없습니다.")
         return []
+
+    query_embedding = await get_embedding_async(message)
+    if query_embedding is None:
+        print(f"[ERROR] 쿼리 임베딩 생성 실패: 사용자 {user_id}.")
+        return []
+
+    print(f"[DEBUG] FAISS 인덱스 검색 (총 크기: {index.ntotal}) - 사용자: {user_id}, 메시지: '{message[:50]}...'")
+    try:
+        k_search = min(index.ntotal, 7) # k가 인덱스의 항목 수를 초과하지 않도록 함
+        if k_search == 0 : # 검색 전후 인덱스 항목 수가 0인 경우
+             print(f"[DEBUG] 인덱스가 사실상 비어있음 (k_search=0) - 사용자 {user_id}.")
+             return []
+
+        D, I = index.search(np.array([query_embedding]), k=k_search)
+        print(f"[DEBUG] FAISS 검색 원본 결과 - 사용자 {user_id} - 인덱스: {I}, 거리: {D}")
+    except Exception as e:
+        print(f"[ERROR] FAISS 검색 오류 - 사용자 {user_id}: {e}")
+        return []
+
+    referenced_docs_content = []
+    if I is not None and len(I[0]) > 0:
+        for rank, doc_index in enumerate(I[0]):
+            if 0 <= doc_index < len(doc_store): # 범위 확인
+                item = doc_store[doc_index]
+                if isinstance(item, dict) and item.get('user_id') == user_id: # user_id로 필터링
+                    referenced_docs_content.append(item['text'])
+            else:
+                print(f"[WARNING] FAISS 검색 결과의 잘못된 인덱스 {doc_index} - 사용자 {user_id}.")
+        
+        print(f"[DEBUG] 사용자 {user_id}에 대해 {len(I[0])}개의 원본 결과에서 {len(referenced_docs_content)}개의 문서가 필터링됨.")
+    else:
+        print(f"[DEBUG] 사용자 {user_id}에 대한 FAISS 검색 결과가 없습니다.")
+    
+    return referenced_docs_content
