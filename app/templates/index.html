@@ -467,40 +467,54 @@
         sendButton.style.display = "none";
         partial = "";
         lastBotDiv = null;
+        let references = "";
+        let refDiv = null;
+        let isDone = false;
 
-        let userId = localStorage.getItem("userId");
-        if (!userId) {
-          userId = crypto.randomUUID();
-          localStorage.setItem("userId", userId);
-        }
+        let userId = localStorage.getItem("userId") || (localStorage.setItem("userId", crypto.randomUUID()), localStorage.getItem("userId"));
+
         try {
           const response = await fetch(`${API_BASE}/chat/stream`, {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
-              "x-user-id": userId, // 사용자 식별용
+              "x-user-id": userId,
             },
             body: JSON.stringify({ message: message })
           });
           const reader = response.body.getReader();
           const decoder = new TextDecoder();
+          let buffer = "";
 
           while (true) {
             const { done, value } = await reader.read();
             if (done) break;
-            const text = decoder.decode(value, { stream: true });
-            const lines = text.split("\n");
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split("\n");
+            buffer = lines.pop(); // 마지막 미완성 줄을 버퍼로 유지
+
             for (let line of lines) {
               if (line.startsWith("data: ")) {
                 let content = line.slice(6);
-                // content = content.replace(/\\n/g, "<br>"); // 이 줄 제거
-                partial += content; // 순수 텍스트를 partial에 누적
-                if (!lastBotDiv) {
-                  lastBotDiv = document.createElement("div");
-                  lastBotDiv.classList.add("message", "bot");
-                  chatBox.appendChild(lastBotDiv);
+                if (content === "[DONE]") {
+                  isDone = true;
+                } else if (content.startsWith("[참고한 문단]") || content.startsWith("[문단 ")) {
+                  if (!refDiv) {
+                    refDiv = document.createElement("div");
+                    refDiv.classList.add("message", "bot");
+                    chatBox.appendChild(refDiv);
+                  }
+                  references += content + "\n";
+                  refDiv.textContent = references;
+                } else if (!isDone) {
+                  partial += content;
+                  if (!lastBotDiv) {
+                    lastBotDiv = document.createElement("div");
+                    lastBotDiv.classList.add("message", "bot");
+                    chatBox.appendChild(lastBotDiv);
+                  }
+                  lastBotDiv.textContent = partial;
                 }
-                lastBotDiv.textContent = partial; // innerHTML 대신 textContent 사용 및 partial 전체를 할당
                 chatBox.scrollTop = chatBox.scrollHeight;
               }
             }
@@ -508,12 +522,10 @@
         } catch (err) {
           console.error("전송 오류:", err);
           appendMessage("bot", "오류가 발생했습니다. 다시 시도해주세요.");
-          appendSystemLog(`메시지 전송 오류: ${err.message}`);
         } finally {
           sendButton.style.display = "";
         }
       }
-
       // PDF 업로드 함수 (폴링 추가)
       async function uploadPdf() {
         const file = fileInput.files[0];

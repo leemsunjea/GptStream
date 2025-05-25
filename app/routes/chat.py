@@ -133,39 +133,32 @@ async def chat_stream(request: Request, x_user_id: str = Header(..., description
                 content_piece = getattr(chunk.choices[0].delta, "content", None)
                 if content_piece:
                     full_response_content += content_piece
-                    # 모델이 생성한 '\\\\n'을 실제 줄바꿈 문자 '\\n'으로 변경하여 클라이언트에 전달
-                    # 수정 전: yield f"data: {content_piece.replace('\\\\n', '\\n')}\\n\\n"
-                    processed_content_piece = content_piece.replace('\\\\n', '\\n')
-                    yield f"data: {processed_content_piece}\\n\\n"
+                    processed_content_piece = content_piece.replace('\\\\n', '\n')  # 실제 줄바꿈 문자로 변환
+                    # 줄바꿈이 포함된 경우 여러 "data: " 줄로 분리
+                    lines = processed_content_piece.split('\n')
+                    for line in lines:
+                        if line:  # 빈 줄은 무시
+                            yield f"data: {line}\n"
+                    yield "\n"  # 이벤트 종료
                     await asyncio.sleep(0)
 
-            async with async_session() as session:
-                new_exchange_record = ChatHistory(
-                    user_id=x_user_id,
-                    user_message=message,
-                    bot_response=full_response_content, # 모델이 생성한 '\\n' 포함 원본 저장
-                    created_at=func.now()
-                )
-                session.add(new_exchange_record)
-                await session.commit()
-
             if referenced_docs_for_response_display:
-                yield f"data: \\n\\n[참고한 문단]\\n\\n"
+                yield f"data: [참고한 문단]\n"
                 for idx, doc_content_item in enumerate(referenced_docs_for_response_display, 1):
-                    # 모델이 생성한 '\\n'을 실제 줄바꿈 문자 '\n'으로 변경하여 클라이언트에 전달
-                    processed_doc_content = doc_content_item.replace('\\\\n', '\\n') 
-                    yield f"data: [문단 {idx}]\\n{processed_doc_content}\\n\\n"
+                    processed_doc_content = doc_content_item.replace('\\\\n', '\n')
+                    lines = processed_doc_content.split('\n')
+                    for line in lines:
+                        if line:
+                            yield f"data: [문단 {idx}] {line}\n"
+                yield "\n"
 
-            yield f"data: \\n\\n[DONE]\\n\\n"
+            yield f"data: [DONE]\n"
+            yield "\n"
 
         except Exception as e:
-            import traceback
-            error_message = f"오류 발생 in event_stream: {str(e)}"
-            print(error_message)
-            traceback.print_exc()
-            yield f"data: [ERROR] {error_message}\\n\\n"
-
-    return StreamingResponse(event_stream(), media_type="text/event-stream")
+            yield f"data: [ERROR] {str(e)}\n"
+            yield "\n"
+        return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 @router.post("/chat/add_prompt")
 async def add_prompt(request: Request, x_user_id: str = Header(..., description="클라이언트 UUID")): # x_user_id 추가
