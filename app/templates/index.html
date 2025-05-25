@@ -489,9 +489,9 @@
             const { done, value } = await reader.read();
             if (done) break;
             const text = decoder.decode(value, { stream: true });
-            const lines = text.split("");
+            const lines = text.split("\n");
             for (let line of lines) {
-              if (line.startsWith("")) {
+              if (line.startsWith("data: ")) {
                 let content = line.slice(6);
                 // content = content.replace(/\\n/g, "<br>"); // 이 줄 제거
                 partial += content; // 순수 텍스트를 partial에 누적
