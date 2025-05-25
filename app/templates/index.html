@@ -444,7 +444,7 @@
         msg.textContent = message;
         chatBox.appendChild(msg);
         chatBox.scrollTop = chatBox.scrollHeight;
-        return msg;
+        return msg; // 생성된 메시지 요소 반환
       }
 
       // 시스템 로그 출력 함수
@@ -465,7 +465,8 @@
         appendMessage("user", message);
         input.value = "";
         sendButton.style.display = "none";
-        partial = "";
+        
+        partial = ""; 
         lastBotDiv = null;
 
         let userId = localStorage.getItem("userId");
@@ -473,12 +474,15 @@
           userId = crypto.randomUUID();
           localStorage.setItem("userId", userId);
         }
+
+        let buffer = ""; 
+
         try {
           const response = await fetch(`${API_BASE}/chat/stream`, {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
-              "x-user-id": userId, // 사용자 식별용
+              "x-user-id": userId, 
             },
             body: JSON.stringify({ message: message })
           });
@@ -487,30 +491,82 @@
 
           while (true) {
             const { done, value } = await reader.read();
-            if (done) break;
-            const text = decoder.decode(value, { stream: true });
-            const lines = text.split("\n");
-            for (let line of lines) {
-              if (line.startsWith("data: ")) {
-                let content = line.slice(6);
-                // content = content.replace(/\\n/g, "<br>"); // 이 줄 제거
-                partial += content; // 순수 텍스트를 partial에 누적
-                if (!lastBotDiv) {
-                  lastBotDiv = document.createElement("div");
-                  lastBotDiv.classList.add("message", "bot");
-                  chatBox.appendChild(lastBotDiv);
-                }
-                lastBotDiv.textContent = partial; // innerHTML 대신 textContent 사용 및 partial 전체를 할당
-                chatBox.scrollTop = chatBox.scrollHeight;
+            if (done) {
+              // 스트림 종료 시 버퍼에 남은 데이터 처리 (일반적으로 비어있거나 불완전한 조각)
+              if (buffer.trim()) {
+                  // console.log("Stream ended, remaining buffer content:", buffer);
+                  // 이전 코드에서는 이 부분을 파싱하려고 시도했으나,
+                  // SSE 메시지는 \\n\\n으로 끝나야 하므로, 남은 버퍼는 불완전할 가능성이 높습니다.
+                  // 여기서는 특별한 처리를 하지 않거나, 로깅만 수행하는 것이 안전할 수 있습니다.
               }
+              if (lastBotDiv) chatBox.scrollTop = chatBox.scrollHeight;
+              break; 
+            }
+
+            buffer += decoder.decode(value, { stream: true });
+            
+            let eolIndex;
+            // 버퍼에서 완전한 SSE 메시지(\n\n으로 끝나는) 파싱 및 처리
+            while ((eolIndex = buffer.indexOf("\\n\\n")) >= 0) {
+              const messageBlock = buffer.slice(0, eolIndex); // "data: ..." 또는 주석 등
+              buffer = buffer.slice(eolIndex + 2);          // 처리된 메시지 블록과 \\n\\n 제거
+
+              if (messageBlock.startsWith("data:")) {
+                const content = messageBlock.slice(5); // "data:" 다음의 모든 내용을 가져옴 (공백 포함 가능)
+                                                       // 서버에서 \\n 처리를 하므로, content는 실제 줄바꿈을 포함한 텍스트임.
+
+                if (!lastBotDiv && content && content !== "[DONE]" && !content.startsWith("[ERROR]")) {
+                    lastBotDiv = document.createElement("div");
+                    lastBotDiv.classList.add("message", "bot");
+                    chatBox.appendChild(lastBotDiv);
+                }
+
+                if (content === "[DONE]") {
+                  // 스트림 종료 마커
+                } else if (content.startsWith("[ERROR]")) {
+                  console.error("Server error:", content);
+                  if (lastBotDiv) {
+                      lastBotDiv.textContent = content; 
+                  } else { 
+                      appendMessage("bot", content); 
+                  }
+                  partial = content; 
+                } else if (content.startsWith("\\n\\n[참고한 문단]") || (content.startsWith("[문단 ") && content.includes("]"))) {
+                  // 메타데이터 (참고 문단 등) 처리
+                  // 서버에서 "data: \\n\\n[참고한 문단]\\n\\n" 등으로 보내므로, content는 "\\n\\n[참고한 문단]" 형태임.
+                  // 이를 그대로 partial에 추가하여 기존 내용에 이어붙임.
+                  partial += content;
+                  if (lastBotDiv) {
+                    lastBotDiv.textContent = partial;
+                  }
+                } else {
+                  // 실제 메시지 내용
+                  partial += content;
+                  if (lastBotDiv) {
+                    lastBotDiv.textContent = partial; 
+                  }
+                }
+                if (lastBotDiv) chatBox.scrollTop = chatBox.scrollHeight;
+              } else if (messageBlock.startsWith(":")) {
+                // SSE 주석 라인, 무시
+              } else if (messageBlock.trim() === "") {
+                // 빈 메시지 (예: keep-alive), 무시
+              }
+              // "data:"로 시작하지 않는 다른 라인은 무시
             }
           }
         } catch (err) {
           console.error("전송 오류:", err);
-          appendMessage("bot", "오류가 발생했습니다. 다시 시도해주세요.");
+          const errorMsgText = "오류가 발생했습니다. 다시 시도해주세요.";
+          if (lastBotDiv) {
+              lastBotDiv.textContent = errorMsgText;
+          } else { 
+              appendMessage("bot", errorMsgText); 
+          }
+          if (lastBotDiv) chatBox.scrollTop = chatBox.scrollHeight;
           appendSystemLog(`메시지 전송 오류: ${err.message}`);
         } finally {
-          sendButton.style.display = "";
+          sendButton.style.display = ""; 
         }
       }
 

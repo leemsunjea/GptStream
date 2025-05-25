@@ -26,7 +26,9 @@ BASE_SYSTEM_PROMPT_TEMPLATE = """
 
 {reference_document_section}
 
-이제 사용자의 다음 질문에 답변해주세요. 답변은 한국어로 작성하고, 답변 내용에 줄바꿈이 필요하면 '\\n'을 사용하세요.
+이제 사용자의 다음 질문에 답변해주세요. 답변은 한국어로 작성합니다.
+답변 내용에 줄바꿈('\\n')은 문맥상 명확한 단락 구분이 필요하거나 목록을 나열하는 등, 반드시 필요한 경우에만 최소한으로 사용해주세요.
+단어 중간이나 불필요한 위치에 줄바꿈을 사용하지 마세요. 간결하고 읽기 쉽게 답변해주세요.
 """
 
 @router.post("/chat/stream")
@@ -152,11 +154,12 @@ async def chat_stream(request: Request, x_user_id: str = Header(..., description
             if referenced_docs_for_response_display:
                 yield f"data: \\n\\n[참고한 문단]\\n\\n"
                 for idx, doc_content_item in enumerate(referenced_docs_for_response_display, 1):
-                    # 모델이 생성한 '\\n'을 실제 줄바꿈 문자 '\n'으로 변경하여 클라이언트에 전달
+                    # 모델이 생성한 '\\n'을 실제 줄바꿈 문자 '\\n'으로 변경하여 클라이언트에 전달
                     processed_doc_content = doc_content_item.replace('\\\\n', '\\n') 
                     yield f"data: [문단 {idx}]\\n{processed_doc_content}\\n\\n"
 
-            yield f"data: \\n\\n[DONE]\\n\\n"
+            # yield f"data: \\n\\n[DONE]\\n\\n" # 기존 코드
+            yield f"data: [DONE]\\n\\n" # 수정된 코드
 
         except Exception as e:
             import traceback
