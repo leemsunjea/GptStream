@@ -444,7 +444,7 @@
         msg.textContent = message;
         chatBox.appendChild(msg);
         chatBox.scrollTop = chatBox.scrollHeight;
-        return msg;
+        return msg; // 생성된 메시지 요소 반환
       }
 
       // 시스템 로그 출력 함수
@@ -465,7 +465,8 @@
         appendMessage("user", message);
         input.value = "";
         sendButton.style.display = "none";
-        partial = "";
+        
+        partial = ""; 
         lastBotDiv = null;
 
         let userId = localStorage.getItem("userId");
@@ -473,25 +474,37 @@
           userId = crypto.randomUUID();
           localStorage.setItem("userId", userId);
         }
+
         try {
           const response = await fetch(`${API_BASE}/chat/stream`, {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
-              "x-user-id": userId, // 사용자 식별용
+              "x-user-id": userId, 
             },
             body: JSON.stringify({ message: message })
           });
+          
+          // 새로운 봇 메시지 요소 생성
+          if (!lastBotDiv) {
+            lastBotDiv = document.createElement("div");
+            lastBotDiv.classList.add("message", "bot");
+            chatBox.appendChild(lastBotDiv);
+          }
+          
           const reader = response.body.getReader();
-          const decoder = new TextDecoder();
-
+          const decoder = new TextDecoder("utf-8");
+          
+          // 부분적인 라인을 처리하기 위한 버퍼
+          let buffer = "";
+          
           while (true) {
             const { done, value } = await reader.read();
             if (done) break;
             const text = decoder.decode(value, { stream: true });
-            const lines = text.split("");
+            const lines = text.split("\n");
             for (let line of lines) {
-              if (line.startsWith("")) {
+              if (line.startsWith("data: ")) {
                 let content = line.slice(6);
                 // content = content.replace(/\\n/g, "<br>"); // 이 줄 제거
                 partial += content; // 순수 텍스트를 partial에 누적
@@ -507,10 +520,15 @@
           }
         } catch (err) {
           console.error("전송 오류:", err);
-          appendMessage("bot", "오류가 발생했습니다. 다시 시도해주세요.");
+          const errorMsgText = "오류가 발생했습니다. 다시 시도해주세요.";
+          if (lastBotDiv) {
+              lastBotDiv.textContent = errorMsgText;
+          } else { 
+              appendMessage("bot", errorMsgText); 
+          }
           appendSystemLog(`메시지 전송 오류: ${err.message}`);
         } finally {
-          sendButton.style.display = "";
+          sendButton.style.display = ""; 
         }
       }
 
