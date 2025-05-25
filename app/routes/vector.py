@@ -29,69 +29,89 @@ async def save_upload_file(file: UploadFile, upload_dir: str):
         raise
     return file_path
 
-async def process_pdf(task_id: str, file_path: str, filename: str, session, logs, user_id: str): # user_id 추가
+async def process_pdf(task_id: str, file_path: str, filename: str, session_factory, logs, user_id: str): # session -> session_factory
+    processed_successfully = False
+    # doc_store_lock과 index_lock은 load_faiss_and_docstore 호출까지 포함하도록 유지합니다.
+    # process_pdf 함수 자체는 백그라운드 태스크로 동시에 여러개가 실행될 수 있지만,
+    # 공유 자원인 doc_store와 index에 대한 접근 및 수정은 동기화되어야 합니다.
+    # load_faiss_and_docstore 내부에서 DB를 읽고 전역 변수를 업데이트하므로,
+    # 이 함수 호출 자체를 lock으로 감싸는 것이 더 안전할 수 있습니다.
+    # 하지만 현재 lock은 process_pdf 시작부터 걸려있으므로,
+    # 한 번에 하나의 PDF 처리 + load_faiss_and_docstore만 실행됩니다.
+    # 만약 PDF 처리(DB 저장)는 병렬로 하고, load_faiss_and_docstore만 동기화하려면 lock 위치 조정 필요.
+    # 현재 구조에서는 process_pdf 전체를 lock으로 감싸는 것이 가장 간단하고 안전합니다.
     async with doc_store_lock, index_lock:
-        logs.append(f"처리할 파일 경로: {file_path} (사용자: {user_id})") # 로그에 user_id 추가
+        logs.append(f"처리할 파일 경로: {file_path} (사용자: {user_id})")
+        doc_object_for_page_count = None # 페이지 수 참조를 위해 try 블록 외부에서 선언
         try:
-            doc = fitz.open(file_path)
-            if len(doc) > 50:
-                logs.append("PDF 페이지 수가 너무 많습니다. 50페이지 이하로 제한됩니다.")
-                task_statuses[task_id] = {"status": "failed", "logs": logs, "detail": "페이지 수 초과"}
-                return
-            async with session.begin():
-                # all_embeddings_for_user_pdf = [] # 현재 PDF 처리에서 생성된 임베딩만 저장 (load_faiss_and_docstore로 이전)
-                # current_pdf_doc_store_references = [] # 현재 PDF의 텍스트와 메타데이터 임시 저장 (load_faiss_and_docstore로 이전)
+            async with session_factory() as session: # 새로운 세션 사용
+                async with session.begin(): # 트랜잭션 시작
+                    doc_object_for_page_count = fitz.open(file_path) # fitz.open 결과를 변수에 저장
+                    if len(doc_object_for_page_count) > 50:
+                        logs.append("PDF 페이지 수가 너무 많습니다. 50페이지 이하로 제한됩니다.")
+                        task_statuses[task_id] = {"status": "failed", "logs": logs, "detail": "페이지 수 초과"}
+                        # 임시 파일 삭제 로직 추가
+                        try:
+                            if os.path.exists(file_path):
+                                os.remove(file_path)
+                                print(f"[DEBUG] 임시 파일 삭제 (페이지 수 초과): {file_path} (사용자: {user_id})")
+                        except Exception as e_remove:
+                            print(f"[ERROR] 임시 파일 삭제 실패 (페이지 수 초과): {e_remove} (사용자: {user_id})")
+                        return # 여기서 함수 종료
 
-                for i, page in enumerate(doc):
-                    text = page.get_text()
-                    if not text.strip():
-                        logs.append(f"페이지 {i+1}: 텍스트 없음")
-                        print(f"[DEBUG] 페이지 {i+1}: 텍스트 없음 (사용자: {user_id})")
-                        continue
-
-                    result = await session.execute(
-                        insert(documents).values(
-                            user_id=user_id,  # user_id 추가
-                            pdf_name=filename,
-                            page_number=i,
-                            content=text
-                        ).returning(documents.c.id)
-                    )
-                    doc_id = result.scalar()
-                    logs.append(f"페이지 {i+1}: 문서 ID {doc_id} 저장 (사용자: {user_id})")
-                    print(f"[DEBUG] 저장된 문서 ID: {doc_id}, 페이지 번호: {i+1}, 사용자: {user_id}, 내용: {text[:30]}...", flush=True)
-                    await asyncio.sleep(0)
-                    paragraphs = split_text_to_paragraphs(text)
-                    tasks = [get_embedding_async(para) for para in paragraphs]
-                    embedding_results = await asyncio.gather(*tasks, return_exceptions=True)
-                    
-                    batch_embeddings_for_db = []
-                    for j, emb_result in enumerate(embedding_results):
-                        if isinstance(emb_result, Exception):
-                            logs.append(f"임베딩 오류 (페이지 {i+1}, 문단 {j+1}): {emb_result} (사용자: {user_id})")
+                    for i, page in enumerate(doc_object_for_page_count): # 저장된 변수 사용
+                        text = page.get_text()
+                        if not text.strip():
+                            logs.append(f"페이지 {i+1}: 텍스트 없음")
+                            print(f"[DEBUG] 페이지 {i+1}: 텍스트 없음 (사용자: {user_id})")
                             continue
-                        if isinstance(emb_result, np.ndarray):
-                            batch_embeddings_for_db.append({"document_id": doc_id, "embedding": emb_result.tobytes(), "user_id": user_id}) # user_id 추가
-                            # all_embeddings_for_user_pdf.append(emb_result) # FAISS 인덱스용 (load_faiss_and_docstore로 이전)
-                            # current_pdf_doc_store_references.append({
-                            #     'text': paragraphs[j],
-                            #     'user_id': user_id,
-                            #     'doc_id': doc_id
-                            # }) # (load_faiss_and_docstore로 이전)
-                        else:
-                            logs.append(f"잘못된 임베딩 결과 유형 (페이지 {i+1}, 문단 {j+1}): {type(emb_result)} (사용자: {user_id})")
 
-                    if batch_embeddings_for_db:
-                        stmt = insert(embeddings)
-                        await session.execute(stmt, batch_embeddings_for_db)
-                        logs.append(f"페이지 {i+1}: {len(batch_embeddings_for_db)} 문단 임베딩 저장 (사용자: {user_id})")
-                
-                # PDF DB 저장 완료 후, 전체 FAISS 인덱스 및 문서 저장소 재로드
+                        result = await session.execute(
+                            insert(documents).values(
+                                user_id=user_id,
+                                pdf_name=filename,
+                                page_number=i,
+                                content=text
+                            ).returning(documents.c.id)
+                        )
+                        doc_id = result.scalar()
+                        logs.append(f"페이지 {i+1}: 문서 ID {doc_id} 저장 (사용자: {user_id})")
+                        print(f"[DEBUG] 저장된 문서 ID: {doc_id}, 페이지 번호: {i+1}, 사용자: {user_id}, 내용: {text[:30]}...", flush=True)
+                        
+                        paragraphs = split_text_to_paragraphs(text)
+                        tasks = [get_embedding_async(para) for para in paragraphs]
+                        embedding_results = await asyncio.gather(*tasks, return_exceptions=True)
+                        
+                        batch_embeddings_for_db = []
+                        for j, emb_result in enumerate(embedding_results):
+                            if isinstance(emb_result, Exception):
+                                logs.append(f"임베딩 오류 (페이지 {i+1}, 문단 {j+1}): {emb_result} (사용자: {user_id})")
+                                continue
+                            if isinstance(emb_result, np.ndarray):
+                                batch_embeddings_for_db.append({"document_id": doc_id, "embedding": emb_result.tobytes(), "user_id": user_id})
+                            else:
+                                logs.append(f"잘못된 임베딩 결과 유형 (페이지 {i+1}, 문단 {j+1}): {type(emb_result)} (사용자: {user_id})")
+
+                        if batch_embeddings_for_db:
+                            stmt = insert(embeddings)
+                            await session.execute(stmt, batch_embeddings_for_db)
+                            logs.append(f"페이지 {i+1}: {len(batch_embeddings_for_db)} 문단 임베딩 저장 (사용자: {user_id})")
+                    
+                    # session.begin() 블록이 여기서 끝나면 커밋됨
+                processed_successfully = True 
+                logs.append(f"모든 페이지 DB 저장 및 커밋 완료 (사용자: {user_id})")
+
+            # DB 작업이 커밋된 후에 FAISS 인덱스 및 문서 저장소 재로드
+            if processed_successfully:
                 await load_faiss_and_docstore() # DB에서 전체 데이터를 다시 로드하여 인덱스와 doc_store 갱신
                 logs.append(f"FAISS 인덱스 및 문서 저장소 업데이트 완료 (사용자: {user_id})")
+                # doc_object_for_page_count가 None이 아닐 때만 len 호출
+                page_count_to_log = len(doc_object_for_page_count) if doc_object_for_page_count else 0
+                task_statuses[task_id] = {"status": "completed", "logs": logs, "page_count": page_count_to_log}
+            else:
+                if task_statuses.get(task_id, {}).get("status") != "failed":
+                     task_statuses[task_id] = {"status": "failed", "logs": logs, "detail": "PDF 처리 중 DB 작업 실패 또는 처리되지 않음"}
 
-                logs.append(f"모든 페이지 처리 완료 (사용자: {user_id})")
-                task_statuses[task_id] = {"status": "completed", "logs": logs, "page_count": len(doc)}
         except Exception as e:
             logs.append(f"PDF 처리 오류 (사용자: {user_id}): {e}")
             task_statuses[task_id] = {"status": "failed", "logs": logs, "detail": str(e)}
@@ -100,20 +120,20 @@ async def process_pdf(task_id: str, file_path: str, filename: str, session, logs
                 if os.path.exists(file_path):
                     os.remove(file_path)
                     print(f"[DEBUG] 임시 파일 삭제: {file_path} (사용자: {user_id})")
-            except Exception as e:
-                print(f"[ERROR] 임시 파일 삭제 실패: {e} (사용자: {user_id})")
+            except Exception as e_remove:
+                print(f"[ERROR] 임시 파일 삭제 실패: {e_remove} (사용자: {user_id})")
 
 @router.post("/upload_pdf")
-async def upload_pdf(file: UploadFile = File(...), background_tasks: BackgroundTasks = None, x_user_id: str = Header(..., description="클라이언트 UUID")): # x_user_id 추가
+async def upload_pdf(file: UploadFile = File(...), background_tasks: BackgroundTasks = None, x_user_id: str = Header(..., description="클라이언트 UUID")):
     logs = []
     file_path = None
     task_id = str(uuid.uuid4())
-    task_statuses[task_id] = {"status": "pending", "logs": logs} # 초기 상태 설정
+    task_statuses[task_id] = {"status": "pending", "logs": logs}
     try:
         file_path = await save_upload_file(file, upload_dir)
         logs.append(f"PDF 저장 완료: {file.filename} (사용자: {x_user_id})")
-        # process_pdf 호출 시 x_user_id 전달
-        background_tasks.add_task(process_pdf, task_id, file_path, file.filename, async_session(), logs, x_user_id)
+        # process_pdf 호출 시 async_session (세션 팩토리) 전달
+        background_tasks.add_task(process_pdf, task_id, file_path, file.filename, async_session, logs, x_user_id) # async_session() -> async_session
         return JSONResponse({
             "success": True,
             "task_id": task_id,
