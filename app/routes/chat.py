@@ -133,8 +133,10 @@ async def chat_stream(request: Request, x_user_id: str = Header(..., description
                 content_piece = getattr(chunk.choices[0].delta, "content", None)
                 if content_piece:
                     full_response_content += content_piece
-                    # 모델이 생성한 '\\n'을 실제 줄바꿈 문자 '\n'으로 변경하여 클라이언트에 전달
-                    yield f"data: {content_piece.replace('\\\\n', '\\n')}\\n\\n"
+                    # 모델이 생성한 '\\\\n'을 실제 줄바꿈 문자 '\\n'으로 변경하여 클라이언트에 전달
+                    # 수정 전: yield f"data: {content_piece.replace('\\\\n', '\\n')}\\n\\n"
+                    processed_content_piece = content_piece.replace('\\\\n', '\\n')
+                    yield f"data: {processed_content_piece}\\n\\n"
                     await asyncio.sleep(0)
 
             async with async_session() as session:

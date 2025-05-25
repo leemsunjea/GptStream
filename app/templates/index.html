@@ -132,6 +132,8 @@
       background-color: #f8f9fa;
       align-self: flex-start;
       border-bottom-left-radius: 4px;
+      white-space: pre-line;
+      /* 추가된 부분: \n 문자를 기준으로 자동 줄바꿈 */
     }
 
     .message.user {
@@ -491,14 +493,14 @@
             for (let line of lines) {
               if (line.startsWith("data: ")) {
                 let content = line.slice(6);
-                content = content.replace(/\n/g, "<br>");
-                partial += content;
+                // content = content.replace(/\\n/g, "<br>"); // 이 줄 제거
+                partial += content; // 순수 텍스트를 partial에 누적
                 if (!lastBotDiv) {
                   lastBotDiv = document.createElement("div");
                   lastBotDiv.classList.add("message", "bot");
                   chatBox.appendChild(lastBotDiv);
                 }
-                lastBotDiv.innerHTML = partial;
+                lastBotDiv.textContent = partial; // innerHTML 대신 textContent 사용 및 partial 전체를 할당
                 chatBox.scrollTop = chatBox.scrollHeight;
               }
             }
