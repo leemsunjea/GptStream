@@ -133,19 +133,18 @@ async def chat_stream(request: Request, x_user_id: str = Header(..., description
                 content_piece = getattr(chunk.choices[0].delta, "content", None)
                 if content_piece:
                     full_response_content += content_piece
-                    processed_content_piece = content_piece.replace('\\\\n', '\n')  # 실제 줄바꿈 문자로 변환
-                    # 줄바꿈이 포함된 경우 여러 "data: " 줄로 분리
+                    processed_content_piece = content_piece.replace('\\n', '\n')
                     lines = processed_content_piece.split('\n')
                     for line in lines:
-                        if line:  # 빈 줄은 무시
+                        if line:
                             yield f"data: {line}\n"
-                    yield "\n"  # 이벤트 종료
+                    yield "\n"
                     await asyncio.sleep(0)
 
             if referenced_docs_for_response_display:
                 yield f"data: [참고한 문단]\n"
                 for idx, doc_content_item in enumerate(referenced_docs_for_response_display, 1):
-                    processed_doc_content = doc_content_item.replace('\\\\n', '\n')
+                    processed_doc_content = doc_content_item.replace('\\n', '\n')
                     lines = processed_doc_content.split('\n')
                     for line in lines:
                         if line:
@@ -158,7 +157,8 @@ async def chat_stream(request: Request, x_user_id: str = Header(..., description
         except Exception as e:
             yield f"data: [ERROR] {str(e)}\n"
             yield "\n"
-        return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 @router.post("/chat/add_prompt")
 async def add_prompt(request: Request, x_user_id: str = Header(..., description="클라이언트 UUID")): # x_user_id 추가
