@@ -125,9 +125,10 @@ async def chat_stream(request: Request, x_user_id: str = Header(..., description
                 content_piece = getattr(chunk.choices[0].delta, "content", None)
                 if content_piece:
                     full_response_content += content_piece
-                    # 줄바꿈 처리 로직 제거 및 직접 스트리밍
-                    yield f"data: {content_piece.replace('\\n', '<br>')}\\n" # 클라이언트에서 HTML로 처리하도록 <br> 태그 사용
-                    yield "\\n" # SSE 메시지 종료
+                    # 실제 개행 문자를 <br> 태그로 변경
+                    content_with_br = content_piece.replace('\\n', '<br>')
+                    yield f"data: {content_with_br}\\n" # SSE 데이터 라인 끝에 개행 추가
+                    yield "\\n" # SSE 메시지 종료 (두 번째 개행)
                     await asyncio.sleep(0)
 
             # 주석 처리된 문서 정보 전송 로직은 그대로 둡니다.
