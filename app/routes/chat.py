@@ -69,19 +69,32 @@ async def chat_stream(request: Request, x_user_id: str = Header(..., description
 
     openai_chat_history_list.append({"role": "user", "content": message})
 
-    # 문서 검색 및 참조 처리 (기존 로직 유지)
+    # 문서 검색 및 참조 처리
     context_text_for_prompt = ""
-    referenced_docs_for_response_display = []
+    referenced_docs_for_response_display = [] # 전체 문서 메타데이터를 담을 리스트
+    # 검색된 각 문서는 이제 텍스트뿐만 아니라 title, summary, response_style, created_at, pdf_name 등의 메타데이터를 포함한 딕셔너리입니다.
     if index.ntotal > 0:
-        retrieved_documents = await search_similar_documents(message, x_user_id)
-        if retrieved_documents:
-            print(f"[DEBUG] 사용자 {x_user_id}에 대해 검색된 관련 문서 수: {len(retrieved_documents)}")
-            context_text_for_prompt = "\\n".join(retrieved_documents)
-            referenced_docs_for_response_display = retrieved_documents
+        retrieved_documents_details = await search_similar_documents(message, x_user_id)
+        if retrieved_documents_details:
+            print(f"[DEBUG] 사용자 {x_user_id}에 대해 검색된 관련 문서 수: {len(retrieved_documents_details)}")
+            
+            # 프롬프트에 포함할 컨텍스트 생성 (예: 각 문서의 텍스트와 일부 메타데이터)
+            context_parts = []
+            for doc_detail in retrieved_documents_details:
+                # doc_detail은 이제 딕셔너리입니다.
+                text_content = doc_detail.get('text', '')
+                title = doc_detail.get('title', '제목 없음')
+                # 필요에 따라 summary, created_at 등 다른 메타데이터도 여기에 추가할 수 있습니다.
+                context_parts.append(f"문서 제목: {title}\n내용: {text_content}") 
+            context_text_for_prompt = "\n\n".join(context_parts)
+            
+            # 응답에 표시할 참조 정보 (예: 전체 메타데이터 또는 선택적 정보)
+            # 여기서는 검색된 각 항목(문단과 그 메타데이터)을 그대로 사용합니다.
+            referenced_docs_for_response_display = retrieved_documents_details 
 
     reference_document_section_content = ""
     if context_text_for_prompt:
-        reference_document_section_content = f"""다음은 사용자가 업로드한 문서에서 현재 대화와 관련성이 높은 내용입니다. 이 내용을 최우선으로 참고하여 사용자의 질문에 답변해주세요.
+        reference_document_section_content = f"""다음은 사용자가 업로드한 문서에서 현재 대화와 관련성이 높은 내용입니다. 각 문서는 제목과 내용으로 구성되어 있습니다. 이 내용을 최우선으로 참고하여 사용자의 질문에 답변해주세요.
 [참고 문서 내용 시작]
 {context_text_for_prompt}
 [참고 문서 내용 끝]
@@ -119,13 +132,25 @@ async def chat_stream(request: Request, x_user_id: str = Header(..., description
                     await asyncio.sleep(0)
 
             if referenced_docs_for_response_display:
-                yield f"data: [참고한 문단]\n"
-                for idx, doc_content_item in enumerate(referenced_docs_for_response_display, 1):
-                    processed_doc_content = doc_content_item.replace('\\n', '\n')
-                    lines = processed_doc_content.split('\n')
-                    for line in lines:
+                yield f"data: [참고한 문서 정보]\n"
+                for idx, doc_detail in enumerate(referenced_docs_for_response_display, 1):
+                    # doc_detail은 이제 딕셔너리입니다.
+                    title = doc_detail.get('title', '제목 없음')
+                    summary = doc_detail.get('summary', '요약 없음')
+                    pdf_name = doc_detail.get('pdf_name', '알 수 없는 PDF')
+                    created_at_iso = doc_detail.get('created_at', '시간 정보 없음')
+                    text_preview = doc_detail.get('text', '')[:100] # 문단 내용 미리보기
+                    
+                    # 클라이언트에 전달할 정보 구성 (예시)
+                    # 상세 정보나 문단 전체 텍스트를 보낼 수도 있습니다.
+                    # 여기서는 제목, 요약, 파일명, 생성 시간, 문단 미리보기를 전달합니다.
+                    doc_info_line = f"[문서 {idx}] 제목: {title} (파일명: {pdf_name}, 업로드: {created_at_iso})\n요약: {summary}\n문단 미리보기: {text_preview}..."
+                    
+                    # 여러 줄로 된 정보를 안전하게 전송하기 위해 각 줄을 data: 로 시작하도록 처리
+                    for line in doc_info_line.split('\n'):
                         if line:
-                            yield f"data: [문단 {idx}] {line}\n"
+                            yield f"data: {line}\n"
+                    yield f"data: ---\n" # 문서 정보 구분자
                 yield "\n"
 
             yield f"data: [DONE]\n"

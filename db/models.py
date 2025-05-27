@@ -27,6 +27,7 @@ documents = Table(
     Column("title", String, nullable=True), # 문서 제목
     Column("summary", Text, nullable=True), # 문서 요약
     Column("response_style", Text, nullable=True), # 응답 스타일
+    Column("created_at", DateTime, server_default=func.now()) # 문서 업로드 시간
 )
 
 embeddings = Table(

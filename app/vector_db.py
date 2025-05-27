@@ -2,9 +2,10 @@
 import os
 import faiss
 import numpy as np
+import aiohttp # aiohttp 임포트 추가
 from dotenv import load_dotenv
 from db.database import async_session
-from sqlalchemy import select, text
+from sqlalchemy import select, text # sqlalchemy 임포트 확인
 from db.models import documents, embeddings
 from app.config import settings
 from openai import OpenAI
@@ -25,8 +26,17 @@ async def load_faiss_and_docstore():
     embedding_vectors = []
 
     async with async_session() as session:
-        # 모든 문서 및 해당 user_id 가져오기
-        stmt_docs = select(documents.c.id, documents.c.user_id, documents.c.content).order_by(documents.c.id)
+        # 모든 문서 및 해당 user_id, title, summary, response_style, created_at, pdf_name 가져오기
+        stmt_docs = select(
+            documents.c.id, 
+            documents.c.user_id, 
+            documents.c.content,
+            documents.c.title,
+            documents.c.summary,
+            documents.c.response_style,
+            documents.c.created_at,
+            documents.c.pdf_name
+        ).order_by(documents.c.id)
         result_docs = await session.execute(stmt_docs)
         all_db_documents = result_docs.fetchall()
 
@@ -40,8 +50,8 @@ async def load_faiss_and_docstore():
             return index, doc_store
 
         # 각 문서에 대해 문단으로 분할하고 해당 임베딩 가져오기
-        for doc_id, user_id, page_content in all_db_documents:
-            print(f"[DEBUG] load_faiss_and_docstore: 문서 처리 중 - doc_id: {doc_id}, user_id: {user_id}")
+        for doc_id, user_id, page_content, title, summary, response_style, created_at, pdf_name in all_db_documents:
+            print(f"[DEBUG] load_faiss_and_docstore: 문서 처리 중 - doc_id: {doc_id}, user_id: {user_id}, title: {title}")
             if not page_content: # 페이지 내용이 비어있다면 건너뜀
                 print(f"[DEBUG] load_faiss_and_docstore: doc_id {doc_id} (user_id: {user_id})은(는) 페이지 내용이 비어있어 건너뜁니다.")
                 continue
@@ -62,9 +72,13 @@ async def load_faiss_and_docstore():
                 new_doc_store.append({
                     'text': para_text,
                     'user_id': user_id,
-                    'doc_id': doc_id # 원본 문서 ID
+                    'doc_id': doc_id,
+                    'title': title,
+                    'summary': summary,
+                    'response_style': response_style,
+                    'created_at': created_at.isoformat() if created_at else None, # ISO 형식으로 변환
+                    'pdf_name': pdf_name
                 })
-                # print(f"[DEBUG] load_faiss_and_docstore: new_doc_store에 추가 - doc_id: {doc_id}, user_id: {user_id}, text: '{para_text[:30]}...'")
                 embedding_bytes = paragraph_embeddings_bytes[i]
                 embedding_vectors.append(np.frombuffer(embedding_bytes, dtype=np.float32))
 
@@ -72,7 +86,7 @@ async def load_faiss_and_docstore():
         doc_store = new_doc_store # 전역 doc_store에 할당
         print(f"[INFO] load_faiss_and_docstore: 전역 doc_store 업데이트 완료. 총 {len(doc_store)}개 항목.")
         if doc_store:
-            print(f"[DEBUG] load_faiss_and_docstore: 업데이트된 doc_store의 첫 번째 항목: user_id={doc_store[0].get('user_id')}, doc_id={doc_store[0].get('doc_id')}, text='{doc_store[0].get('text', '')[:50]}...'")
+            print(f"[DEBUG] load_faiss_and_docstore: 업데이트된 doc_store의 첫 번째 항목: user_id={doc_store[0].get('user_id')}, doc_id={doc_store[0].get('doc_id')}, title='{doc_store[0].get('title')}', text='{doc_store[0].get('text', '')[:30]}...'")
 
         index.reset() # 기존 인덱스 초기화
         print(f"[INFO] load_faiss_and_docstore: FAISS 인덱스 초기화 완료. 추가할 벡터 수: {len(embedding_vectors)}")
@@ -128,9 +142,9 @@ async def search_similar_documents(message: str, user_id: str): # user_id 매개
 
     print(f"[DEBUG] search_similar_documents: FAISS 인덱스 검색 (총 크기: {index.ntotal}) - 사용자: {user_id}")
     try:
-        k_search = min(index.ntotal, 7) # k가 인덱스의 항목 수를 초과하지 않도록 함
+        k_search = min(index.ntotal, 7) 
         print(f"[DEBUG] search_similar_documents: k_search 값: {k_search}")
-        if k_search == 0 : # 검색 전후 인덱스 항목 수가 0인 경우
+        if k_search == 0 : 
              print(f"[DEBUG] search_similar_documents: 인덱스가 사실상 비어있음 (k_search=0). 사용자 {user_id}.")
              return []
 
@@ -140,24 +154,29 @@ async def search_similar_documents(message: str, user_id: str): # user_id 매개
         print(f"[ERROR] search_similar_documents: FAISS 검색 오류 - 사용자 {user_id}: {e}")
         return []
 
-    referenced_docs_content = []
+    # referenced_docs_content 대신 referenced_docs_details 로 변경하여 메타데이터 포함
+    referenced_docs_details = [] 
     if I is not None and len(I[0]) > 0:
         print(f"[DEBUG] search_similar_documents: FAISS 결과 {len(I[0])}개 항목 필터링 시작 - 사용자: {user_id}")
+        unique_doc_ids = set() # 중복된 doc_id의 전체 메타데이터 반환 방지
+
         for rank, doc_index in enumerate(I[0]):
             print(f"[DEBUG] search_similar_documents: 필터링 중 - rank: {rank}, doc_index: {doc_index}")
-            if 0 <= doc_index < len(doc_store): # 범위 확인
+            if 0 <= doc_index < len(doc_store): 
                 item = doc_store[doc_index]
-                print(f"[DEBUG] search_similar_documents: doc_store 항목 (인덱스 {doc_index}): {item.get('user_id')}, {item.get('doc_id')}, '{item.get('text', '')[:30]}...'")
-                if isinstance(item, dict) and item.get('user_id') == user_id: # user_id로 필터링
-                    referenced_docs_content.append(item['text'])
-                    print(f"[DEBUG] search_similar_documents: 사용자 {user_id} 문서 일치! referenced_docs_content에 추가됨.")
+                # user_id로 필터링하고, 아직 추가되지 않은 doc_id인 경우에만 추가
+                if isinstance(item, dict) and item.get('user_id') == user_id:
+                    # 검색 결과에는 문단 텍스트와 함께 전체 문서의 메타데이터를 포함시킬 수 있음
+                    # 여기서는 검색된 문단(item) 자체를 반환 (이미 메타데이터 포함)
+                    referenced_docs_details.append(item) 
+                    print(f"[DEBUG] search_similar_documents: 사용자 {user_id} 문서 일치! referenced_docs_details에 추가됨: {item.get('doc_id')}, {item.get('title')}")
                 else:
                     print(f"[DEBUG] search_similar_documents: 사용자 {user_id} 문서 불일치 (doc_store user_id: {item.get('user_id')}).")
             else:
                 print(f"[WARNING] search_similar_documents: FAISS 검색 결과의 잘못된 인덱스 {doc_index} (doc_store 크기: {len(doc_store)}) - 사용자 {user_id}.")
         
-        print(f"[DEBUG] search_similar_documents: 사용자 {user_id}에 대해 {len(I[0])}개의 원본 결과에서 {len(referenced_docs_content)}개의 문서가 최종 필터링됨.")
+        print(f"[DEBUG] search_similar_documents: 사용자 {user_id}에 대해 {len(I[0])}개의 원본 결과에서 {len(referenced_docs_details)}개의 상세 정보가 최종 필터링됨.")
     else:
         print(f"[DEBUG] search_similar_documents: 사용자 {user_id}에 대한 FAISS 검색 결과가 없습니다 (I is None or 비어있음).")
     
-    return referenced_docs_content
+    return referenced_docs_details # 상세 정보 반환
