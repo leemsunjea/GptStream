@@ -10,12 +10,64 @@ from app.vector_db import get_embedding_async, split_text_to_paragraphs, doc_sto
 import asyncio
 import uuid
 from asyncio import Lock
+from openai import OpenAI # OpenAI 클라이언트 추가
+from app.config import settings # 설정값 로드
 
 router = APIRouter()
 upload_dir = "/tmp/temp_uploads"
 task_statuses = {}
 doc_store_lock = Lock()
 index_lock = Lock()
+client = OpenAI(api_key=settings.OPENAI_API_KEY) # OpenAI 클라이언트 초기화
+
+async def generate_metadata(text_content: str, filename: str):
+    """문서 내용과 파일명을 기반으로 메타데이터를 생성합니다."""
+    try:
+        # 제목 생성 (첫 번째 줄 또는 파일명 활용)
+        title = text_content.split('\\n')[0][:100] if text_content else filename
+
+        # 요약 생성
+        summary_prompt = f"""다음 텍스트를 한국어로 2-3문장으로 요약해주세요:
+---
+{text_content[:2000]} # API 길이 제한 고려
+---
+요약:"""
+        summary_response = await asyncio.get_event_loop().run_in_executor(
+            None,
+            lambda: client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[{"role": "user", "content": summary_prompt}],
+                max_tokens=150
+            )
+        )
+        summary = summary_response.choices[0].message.content.strip()
+
+        # 응답 스타일 제안
+        response_style_prompt = f"""이 문서는 '{title}'에 관한 내용이며, 주요 내용은 다음과 같습니다: '{summary}'. 
+이 문서를 참고하여 사용자에게 답변할 때 어떤 스타일로 응답하는 것이 좋을지 한국어로 간단히 제안해주세요. (예: 친절하고 상세하게, 전문적이고 간결하게 등)
+응답 스타일 제안:"""
+        response_style_response = await asyncio.get_event_loop().run_in_executor(
+            None,
+            lambda: client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[{"role": "user", "content": response_style_prompt}],
+                max_tokens=50
+            )
+        )
+        response_style = response_style_response.choices[0].message.content.strip()
+
+        return {
+            "title": title,
+            "summary": summary,
+            "response_style": response_style
+        }
+    except Exception as e:
+        print(f"[ERROR] 메타데이터 생성 중 오류: {e}")
+        return {
+            "title": filename, # 오류 시 파일명을 기본 제목으로 사용
+            "summary": "요약 생성 중 오류 발생",
+            "response_style": "기본 응답 스타일"
+        }
 
 async def save_upload_file(file: UploadFile, upload_dir: str):
     os.makedirs(upload_dir, exist_ok=True)
@@ -43,10 +95,19 @@ async def process_pdf(task_id: str, file_path: str, filename: str, session_facto
     async with doc_store_lock, index_lock:
         logs.append(f"처리할 파일 경로: {file_path} (사용자: {user_id})")
         doc_object_for_page_count = None # 페이지 수 참조를 위해 try 블록 외부에서 선언
+        first_page_text_for_metadata = ""
         try:
             async with session_factory() as session: # 새로운 세션 사용
                 async with session.begin(): # 트랜잭션 시작
                     doc_object_for_page_count = fitz.open(file_path) # fitz.open 결과를 변수에 저장
+                    if len(doc_object_for_page_count) > 0:
+                        # 첫 페이지 내용으로 메타데이터 생성 시도
+                        first_page_text_for_metadata = doc_object_for_page_count[0].get_text() if doc_object_for_page_count[0] else ""
+                    
+                    # 메타데이터 생성
+                    metadata_dict = await generate_metadata(first_page_text_for_metadata, filename)
+                    logs.append(f"메타데이터 생성 완료: {metadata_dict} (사용자: {user_id})")
+
                     if len(doc_object_for_page_count) > 50:
                         logs.append("PDF 페이지 수가 너무 많습니다. 50페이지 이하로 제한됩니다.")
                         task_statuses[task_id] = {"status": "failed", "logs": logs, "detail": "페이지 수 초과"}
@@ -66,16 +127,20 @@ async def process_pdf(task_id: str, file_path: str, filename: str, session_facto
                             print(f"[DEBUG] 페이지 {i+1}: 텍스트 없음 (사용자: {user_id})")
                             continue
 
+                        # 메타데이터를 포함하여 문서 정보 저장
                         result = await session.execute(
                             insert(documents).values(
                                 user_id=user_id,
                                 pdf_name=filename,
                                 page_number=i,
-                                content=text
+                                content=text,
+                                title=metadata_dict.get("title"),
+                                summary=metadata_dict.get("summary"),
+                                response_style=metadata_dict.get("response_style")
                             ).returning(documents.c.id)
                         )
                         doc_id = result.scalar()
-                        logs.append(f"페이지 {i+1}: 문서 ID {doc_id} 저장 (사용자: {user_id})")
+                        logs.append(f"페이지 {i+1}: 문서 ID {doc_id} 저장 (메타데이터 포함) (사용자: {user_id})")
                         print(f"[DEBUG] 저장된 문서 ID: {doc_id}, 페이지 번호: {i+1}, 사용자: {user_id}, 내용: {text[:30]}...", flush=True)
                         
                         paragraphs = split_text_to_paragraphs(text)

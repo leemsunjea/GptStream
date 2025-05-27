@@ -24,6 +24,9 @@ documents = Table(
     Column("pdf_name", String),
     Column("page_number", Integer),
     Column("content", Text),
+    Column("title", String, nullable=True), # 문서 제목
+    Column("summary", Text, nullable=True), # 문서 요약
+    Column("response_style", Text, nullable=True), # 응답 스타일
 )
 
 embeddings = Table(
