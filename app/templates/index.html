@@ -474,9 +474,10 @@
         sendButton.style.display = "none";
         partial = "";
         lastBotDiv = null;
-        let references = "";
-        let refDiv = null;
+        // let references = ""; // 더 이상 직접 사용되지 않음
+        // let refDiv = null; // 더 이상 직접 사용되지 않음
         let isDone = false;
+        let inReferenceSection = false; // 참고 문서 섹션 내부인지 여부를 추적하는 플래그
 
         let userId = localStorage.getItem("userId") || (localStorage.setItem("userId", crypto.randomUUID()), localStorage.getItem("userId"));
 
@@ -497,18 +498,23 @@
             const { done, value } = await reader.read();
             if (done) break;
             buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split("\n");
+            const lines = buffer.split("\\n");
             buffer = lines.pop(); // 마지막 미완성 줄을 버퍼로 유지
 
             for (let line of lines) {
               if (line.startsWith("data: ")) {
                 let content = line.slice(6);
+
                 if (content === "[DONE]") {
                   isDone = true;
-                } else if (content.startsWith("[참고한 문단]") || content.startsWith("[문단 ")) {
-                  references += content + "\n";
-                  appendSystemLog(content); // 시스템 로그에 출력
-                } else if (!isDone) {
+                  inReferenceSection = false; // DONE이면 참고 섹션도 확실히 종료
+                } else if (content === "[참고한 문서 정보]") { // 참고 문서 섹션 시작
+                  inReferenceSection = true;
+                  appendSystemLog(content); // "[참고한 문서 정보]" 타이틀을 시스템 로그에 출력
+                } else if (inReferenceSection) { 
+                  // 참고 문서 섹션 내부의 모든 라인 (개별 문서 정보, 요약, 미리보기, 구분자 "---" 등)
+                  appendSystemLog(content);
+                } else if (!isDone) { // 일반 메시지 처리 (참고 섹션이 아니고, DONE도 아닌 경우)
                   partial += content;
                   if (!lastBotDiv) {
                     lastBotDiv = document.createElement("div");
