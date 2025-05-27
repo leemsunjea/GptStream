@@ -498,7 +498,7 @@
             const { done, value } = await reader.read();
             if (done) break;
             buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split("\\n");
+            const lines = buffer.split("\\n"); // <--- 이 부분을 수정합니다.
             buffer = lines.pop(); // 마지막 미완성 줄을 버퍼로 유지
 
             for (let line of lines) {
