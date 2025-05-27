@@ -505,9 +505,12 @@
                 let content = line.slice(6);
                 if (content === "[DONE]") {
                   isDone = true;
-                } else if (content.startsWith("[참고한 문단]") || content.startsWith("[문단 ")) {
-                  references += content + "\n";
-                  appendSystemLog(content); // 시스템 로그에 출력
+                } else if (content.startsWith("[LOG_INFO]")) { // 변경된 접두사 확인
+                  // 시스템 로그에만 출력 (채팅창에는 보이지 않음)
+                  appendSystemLog(content.substring("[LOG_INFO]".length).trim());
+                } else if (content.startsWith("[참고한 문단]") || content.startsWith("[문단 ")) { // 기존 로직 유지 (혹시 모를 다른 정보)
+                  references += content + "\\n";
+                  appendSystemLog(content); 
                 } else if (!isDone) {
                   partial += content;
                   if (!lastBotDiv) {
