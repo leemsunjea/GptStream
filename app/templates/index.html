@@ -618,7 +618,7 @@
             const response = await fetch(`${API_BASE}/task_status/${task_id}`);
             if (!response.ok) {
               console.error(`작업 상태 확인 오류: ${response.status}`);
-              appendSystemLog(`작업 상태 확인 오류 (HTTP ${response.status}) - Task ID: ${task_id.substring(0,8)}`);
+              appendSystemLog(`작업 상태 확인 오류 (HTTP ${response.status}) - Task ID: ${task_id}`);
               clearInterval(interval);
               delete lastProcessedLogCounts[task_id]; // 오류 시 해당 태스크 ID 정리
               return;
@@ -633,17 +633,17 @@
             }
 
             if (result.status === "completed") {
-              appendMessage("bot", `PDF 처리 완료: ${result.page_count || 0} 페이지 (Task ID: ${task_id.substring(0,8)})`);
+              appendMessage("bot", `PDF 처리 완료: ${result.page_count || 0} 페이지 (Task ID: ${task_id})`);
               clearInterval(interval);
               delete lastProcessedLogCounts[task_id]; // 완료 시 해당 태스크 ID 정리
             } else if (result.status === "failed") {
-              appendMessage("bot", `PDF 처리 실패: ${result.detail || "서버 오류"} (Task ID: ${task_id.substring(0,8)})`);
+              appendMessage("bot", `PDF 처리 실패: ${result.detail || "서버 오류"} (Task ID: ${task_id})`);
               clearInterval(interval);
               delete lastProcessedLogCounts[task_id]; // 실패 시 해당 태스크 ID 정리
             }
           } catch (error) {
             console.error("폴링 오류:", error);
-            appendSystemLog(`작업 상태 폴링 중 예외 발생 (Task ID: ${task_id.substring(0,8)}): ${error.message}`);
+            appendSystemLog(`작업 상태 폴링 중 예외 발생 (Task ID: ${task_id}): ${error.message}`);
             clearInterval(interval);
             delete lastProcessedLogCounts[task_id]; // 예외 발생 시 해당 태스크 ID 정리
           }
