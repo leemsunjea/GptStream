@@ -198,12 +198,15 @@ async def upload_pdf(file: UploadFile = File(...), background_tasks: BackgroundT
     logs = [] # 각 업로드 요청에 대한 초기 로그 리스트
     file_path = None
     task_id = str(uuid.uuid4())
+    print(f"[INFO] PDF 업로드 시작 - 사용자: {x_user_id}, 파일: {file.filename}, task_id: {task_id}")
     task_statuses[task_id] = {"status": "pending", "logs": logs}
+    print(f"[DEBUG] task_statuses에 task_id {task_id} 등록됨. 현재 keys: {list(task_statuses.keys())}")
     try:
         file_path = await save_upload_file(file, upload_dir)
         logs.append(f"PDF 저장 완료: {file.filename} (사용자: {x_user_id})")
         # process_pdf 호출 시 async_session (세션 팩토리) 전달
         background_tasks.add_task(process_pdf, task_id, file_path, file.filename, async_session, logs, x_user_id) # async_session() -> async_session
+        print(f"[INFO] 백그라운드 태스크 추가됨 - task_id: {task_id}")
         return JSONResponse({
             "success": True,
             "task_id": task_id,
@@ -218,6 +221,9 @@ async def upload_pdf(file: UploadFile = File(...), background_tasks: BackgroundT
 
 @router.get("/task_status/{task_id}")
 async def get_task_status(task_id: str):
+    print(f"[INFO] GET /vector/task_status/{task_id} 요청 수신됨")
+    print(f"[DEBUG] 현재 task_statuses에 등록된 task_id 목록: {list(task_statuses.keys())}")
+    
     if task_id not in task_statuses:
         print(f"[ERROR] Task ID {task_id} not found in task_statuses. Current keys: {list(task_statuses.keys())}")
         # Return the current state of task_statuses for debugging
