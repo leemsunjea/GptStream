@@ -23,13 +23,25 @@ client = OpenAI(api_key=settings.OPENAI_API_KEY) # OpenAI 클라이언트 초기
 async def generate_metadata(text_content: str, filename: str):
     """문서 내용과 파일명을 기반으로 메타데이터를 생성합니다."""
     try:
-        # 제목 생성 (첫 번째 줄 또는 파일명 활용)
-        title = text_content.split('\\n')[0][:100] if text_content else filename
+        # 제목 생성 개선: 의미있는 첫 줄 또는 파일명 사용
+        title = filename # 기본값으로 파일명
+        if text_content:
+            lines = [line.strip() for line in text_content.split('\n') if line.strip()] # 빈 줄 제외
+            if lines:
+                # 페이지 번호나 간단한 구분자로 시작하는 경우 제외 시도
+                candidate_title = lines[0]
+                # 숫자만 있거나, '-'로 시작하거나, 너무 짧은 경우는 제외
+                if not (candidate_title.isdigit() or candidate_title.startswith('-') or len(candidate_title) < 5):
+                    title = candidate_title[:150] # 제목 길이 제한
+                elif len(lines) > 1: # 첫 줄이 부적합하면 두번째 줄도 고려
+                    candidate_title_2 = lines[1]
+                    if not (candidate_title_2.isdigit() or candidate_title_2.startswith('-') or len(candidate_title_2) < 5):
+                        title = candidate_title_2[:150]
 
-        # 요약 생성
-        summary_prompt = f"""다음 텍스트를 한국어로 2-3문장으로 요약해주세요:
+        # 요약 생성 (문서의 앞부분 2000자 사용)
+        summary_prompt = f"""다음은 '{title}' 문서의 내용 일부입니다. 이 내용을 한국어로 2-3문장으로 요약해주세요:
 ---
-{text_content[:2000]} # API 길이 제한 고려
+{text_content[:2000]}
 ---
 요약:"""
         summary_response = await asyncio.get_event_loop().run_in_executor(
@@ -37,7 +49,7 @@ async def generate_metadata(text_content: str, filename: str):
             lambda: client.chat.completions.create(
                 model="gpt-3.5-turbo",
                 messages=[{"role": "user", "content": summary_prompt}],
-                max_tokens=150
+                max_tokens=250 # 요약 토큰 증가 (기존 150 또는 200에서 증가)
             )
         )
         summary = summary_response.choices[0].message.content.strip()
@@ -62,11 +74,13 @@ async def generate_metadata(text_content: str, filename: str):
             "response_style": response_style
         }
     except Exception as e:
-        print(f"[ERROR] 메타데이터 생성 중 오류: {e}")
+        detailed_error = traceback.format_exc()
+        print(f"[ERROR] 메타데이터 생성 중 오류: {e}\n{detailed_error}")
+        # 실패 시 기본값 개선
         return {
-            "title": filename, # 오류 시 파일명을 기본 제목으로 사용
-            "summary": "요약 생성 중 오류 발생",
-            "response_style": "기본 응답 스타일"
+            "title": filename,
+            "summary": f"'{filename}' 문서의 내용을 요약하는 중 오류가 발생했습니다.",
+            "response_style": "기본적인 응답 스타일을 사용합니다."
         }
 
 async def save_upload_file(file: UploadFile, upload_dir: str):
@@ -85,98 +99,121 @@ async def save_upload_file(file: UploadFile, upload_dir: str):
 async def process_pdf(task_id: str, file_path: str, filename: str, session_factory, logs, user_id: str):
     processed_successfully = False
     page_count = 0
-    
+    doc_text_content_for_metadata = "" 
+    doc_pymupdf = None # doc_pymupdf 초기화
+
     logs.append(f"처리 시작: {filename} (사용자: {user_id})")
     task_statuses[task_id] = {"status": "processing", "logs": logs, "page_count": 0, "filename": filename}
 
     try:
-        # Create a new session for this task using the passed session_factory
-        async with session_factory() as session:
-            async with session.begin(): # Start a transaction
-                logs.append(f"DB 세션 시작됨 (사용자: {user_id}, 파일: {filename})")
-                
-                doc = fitz.open(file_path)
-                page_count = len(doc)
+        # PDF 열기 및 전체 텍스트 추출 (메타데이터 생성용)
+        try:
+            doc_pymupdf = fitz.open(file_path)
+            page_count = doc_pymupdf.page_count
+            task_statuses[task_id]["page_count"] = page_count
+            
+            # 처음 몇 페이지의 텍스트를 합쳐서 메타데이터 생성에 사용 (예: 최대 3페이지 또는 5000자)
+            chars_for_metadata = 0
+            max_chars_for_metadata = 5000 
+            for page_num in range(min(page_count, 3)): # 최대 3페이지까지만 메타데이터용으로 읽음
+                page = doc_pymupdf.load_page(page_num)
+                page_text = page.get_text("text")
+                if page_text:
+                    doc_text_content_for_metadata += page_text + "\n\n" # 페이지 구분을 위해 두 번의 줄바꿈
+                    chars_for_metadata += len(page_text)
+                    if chars_for_metadata > max_chars_for_metadata:
+                        break
+            
+            if not doc_text_content_for_metadata.strip():
+                 logs.append(f"경고: '{filename}'에서 메타데이터 생성을 위한 텍스트를 추출하지 못했습니다. 파일명 기반으로 메타데이터가 생성됩니다.")
+                 doc_text_content_for_metadata = filename # 텍스트 추출 실패 시 파일명을 기본 내용으로 사용
+        except Exception as e_parse:
+            detailed_error_parse = traceback.format_exc()
+            logs.append(f"PDF 파싱 오류 ({filename}): {e_parse}. 메타데이터는 파일명 기반으로 생성됩니다.\n{detailed_error_parse}")
+            doc_text_content_for_metadata = filename # 파싱 오류 시에도 파일명을 기본 내용으로
+            # 여기서 doc_pymupdf를 닫지 않고, 페이지 수가 0인 경우 등의 처리를 위해 아래로 이동
+            # raise # 파싱 오류 시 처리를 중단하고 오류를 전파할 수 있도록 수정 -> 일단 메타데이터라도 생성 시도
+
+        # 문서 전체에 대한 메타데이터 생성 (한 번만)
+        metadata_dict = await generate_metadata(doc_text_content_for_metadata, filename)
+        logs.append(f"메타데이터 생성됨: {metadata_dict} (사용자: {user_id}, 파일: {filename})")
+
+        if page_count == 0: # PyMuPDF로 페이지 수를 얻었음에도 0인 경우 (매우 드묾)
+            if doc_pymupdf and doc_pymupdf.page_count > 0:
+                page_count = doc_pymupdf.page_count
                 task_statuses[task_id]["page_count"] = page_count
-                logs.append(f"'{filename}' 에서 {page_count} 페이지 로드됨 (사용자: {user_id})")
+                logs.append(f"페이지 수 재확인: {page_count} 페이지")
+            else:
+                logs.append(f"경고: '{filename}'의 페이지 수가 0이거나 PDF를 열 수 없습니다. 처리를 건너<0xEB><0x8F><0x84>니다.")
+                # doc_pymupdf가 None일 수도 있으므로 확인 후 close
+                if doc_pymupdf: doc_pymupdf.close()
+                raise ValueError(f"'{filename}'에서 텍스트를 추출할 수 없고 페이지 수도 0입니다.")
 
-                first_page_text_for_metadata = ""
-                if page_count > 0:
-                    first_page_text_for_metadata = doc[0].get_text("text")
-                else:
-                    logs.append(f"'{filename}'에 페이지가 없어 메타데이터 생성을 건너뜁니다.")
-                    # If no pages, we might still want to create a document entry with no content
-                    # or handle as an error. For now, let's assume it might proceed with no pages.
-
-                # Generate metadata using the content of the first page (or whole doc if preferred)
-                metadata_dict = await generate_metadata(first_page_text_for_metadata, filename)
-                logs.append(f"메타데이터 생성됨: {metadata_dict} (사용자: {user_id}, 파일: {filename})")
-
-                if page_count == 0: # Handle case with no pages after metadata generation attempt
-                    logs.append(f"'{filename}'에 처리할 페이지가 없습니다. DB 저장을 건너뜁니다.")
-                
+        async with session_factory() as session:
+            async with session.begin():
                 for page_num in range(page_count):
-                    page_content = doc[page_num].get_text("text")
-                    if not page_content.strip():
-                        logs.append(f"페이지 {page_num + 1} 내용이 비어있어 건너뜁니다 (사용자: {user_id}).")
+                    current_page_obj = doc_pymupdf.load_page(page_num)
+                    current_page_content = current_page_obj.get_text("text")
+                    if not current_page_content.strip():
+                        logs.append(f"페이지 {page_num + 1} 내용이 비어있어 건너<0xEB><0x8F><0x84>니다.")
                         continue
 
-                    stmt_doc = insert(documents).values(
+                    stmt_document = insert(documents).values(
                         user_id=user_id,
                         pdf_name=filename,
-                        page_number=page_num,
-                        content=page_content,
-                        title=metadata_dict["title"],
-                        summary=metadata_dict["summary"],
+                        page_number=page_num + 1,
+                        content=current_page_content,
+                        title=metadata_dict["title"], 
+                        summary=metadata_dict["summary"], 
                         response_style=metadata_dict["response_style"]
-                        # created_at은 DB에서 자동으로 설정됨 (server_default=func.now())
-                    ).returning(documents.c.id)
-                    
-                    result = await session.execute(stmt_doc)
-                    doc_id = result.scalar_one()
+                    ).returning(documents.c.id) # returning 추가하여 id 바로 가져오기
+                    result = await session.execute(stmt_document)
+                    doc_id = result.scalar_one() # scalar_one() 또는 first()[0] 사용
                     logs.append(f"페이지 {page_num + 1} DB 저장됨 (doc_id: {doc_id}), 사용자: {user_id}")
 
-                    paragraphs = split_text_to_paragraphs(page_content)
+                    paragraphs = split_text_to_paragraphs(current_page_content)
                     para_embeddings_count = 0
                     for para_text in paragraphs:
-                        if not para_text.strip():
-                            continue
+                        if not para_text.strip(): continue
                         embedding_vector = await get_embedding_async(para_text)
                         if embedding_vector is not None:
-                            embedding_bytes = embedding_vector.tobytes()
-                            stmt_emb = insert(embeddings).values(
-                                user_id=user_id,
+                            stmt_embedding = insert(embeddings).values(
                                 document_id=doc_id,
-                                embedding=embedding_bytes
+                                user_id=user_id, 
+                                embedding=embedding_vector.tobytes()
                             )
-                            await session.execute(stmt_emb)
+                            await session.execute(stmt_embedding)
                             para_embeddings_count += 1
+                        else:
+                            logs.append(f"페이지 {page_num + 1}의 문단에 대한 임베딩 생성 실패: '{para_text[:50]}...'")
                     logs.append(f"페이지 {page_num + 1}에 대해 {para_embeddings_count}개 문단 임베딩 생성 및 저장 완료, 사용자: {user_id}")
+            # session.begin() 컨텍스트 매니저가 성공 시 자동 커밋
             
-            # session.begin() context manager handles commit on successful exit
-            logs.append(f"'{filename}' DB 처리 완료 (사용자: {user_id}). FAISS/doc_store 업데이트 시작...")
-            
-            # Lock for FAISS index and doc_store updates
-            async with doc_store_lock, index_lock:
-                 await load_faiss_and_docstore() # This function creates its own session
-            
-            logs.append(f"FAISS 인덱스 및 문서 저장소 업데이트 완료 (사용자: {user_id}, 파일: {filename})")
-            processed_successfully = True
+        logs.append(f"'{filename}' DB 처리 완료 (사용자: {user_id}). FAISS/doc_store 업데이트 시작...")
+        
+        async with doc_store_lock, index_lock:
+             await load_faiss_and_docstore() # 이 함수는 자체 세션을 생성하여 사용
+        
+        logs.append(f"FAISS 인덱스 및 문서 저장소 업데이트 완료 (사용자: {user_id}, 파일: {filename})")
+        processed_successfully = True
 
     except Exception as e:
-        import traceback
         detailed_error = traceback.format_exc()
         error_message = f"PDF 처리 실패: ({type(e).__name__}) {e}\nSQL: {getattr(e, 'statement', 'N/A')}\nParams: {getattr(e, 'params', 'N/A')}\nTraceback: {detailed_error}"
         logs.append(error_message)
         print(f"[ERROR] process_pdf (task: {task_id}, user: {user_id}, file: {filename}): {error_message}")
         task_statuses[task_id]["status"] = "failed"
-        task_statuses[task_id]["detail"] = f"({type(e).__name__}) {e}" # Store a simpler error for client
+        task_statuses[task_id]["detail"] = f"({type(e).__name__}) {e}" 
     finally:
+        if doc_pymupdf: # doc_pymupdf가 열렸었다면 반드시 닫아줌
+            doc_pymupdf.close()
+            logs.append(f"PDF 파일 핸들 닫힘: {filename}")
+
         if processed_successfully:
             task_statuses[task_id]["status"] = "completed"
             logs.append(f"'{filename}' 처리 성공적으로 완료 (사용자: {user_id})")
         else:
-            if task_statuses[task_id].get("status") != "failed":
+            if task_statuses[task_id].get("status") != "failed": # 이미 실패 상태가 아니면
                 task_statuses[task_id]["status"] = "failed"
                 task_statuses[task_id]["detail"] = "알 수 없는 오류로 처리 실패"
             logs.append(f"'{filename}' 처리 중 문제 발생 (사용자: {user_id})")
