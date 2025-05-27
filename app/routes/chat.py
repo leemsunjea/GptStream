@@ -121,17 +121,17 @@ async def chat_stream(request: Request, x_user_id: str = Header(..., description
                 messages=messages_to_send_to_openai,
                 stream=True
             )
-            # for chunk in openai_response_stream:
-            #     content_piece = getattr(chunk.choices[0].delta, "content", None)
-            #     if content_piece:
-            #         full_response_content += content_piece
-            #         processed_content_piece = content_piece.replace('\\\\n', '\\n')
-            #         lines = processed_content_piece.split('\\n')
-            #         for line in lines:
-            #             if line:
-            #                 yield f"data: {line}\\n"
-            #         yield "\\n"
-            #         await asyncio.sleep(0)
+            for chunk in openai_response_stream:
+                content_piece = getattr(chunk.choices[0].delta, "content", None)
+                if content_piece:
+                    full_response_content += content_piece
+                    processed_content_piece = content_piece.replace('\\\\n', '\\n')
+                    lines = processed_content_piece.split('\\n')
+                    for line in lines:
+                        if line:
+                            yield f"data: {line}\\n"
+                    yield "\\n"
+                    await asyncio.sleep(0)
 
             # if referenced_docs_for_response_display:
             #     yield f"data: [참고한 문서 정보]\\n"
