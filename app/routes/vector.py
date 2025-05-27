@@ -218,8 +218,14 @@ async def upload_pdf(file: UploadFile = File(...), background_tasks: BackgroundT
 
 @router.get("/task_status/{task_id}")
 async def get_task_status(task_id: str):
-    status = task_statuses.get(task_id, {"status": "pending"})
-    return JSONResponse(status)
+    if task_id not in task_statuses:
+        print(f"[ERROR] Task ID {task_id} not found in task_statuses. Current keys: {list(task_statuses.keys())}")
+        # Return the current state of task_statuses for debugging
+        return JSONResponse(content={"error": "Task ID not found", "current_task_statuses": task_statuses}, status_code=404)
+
+    task_status = task_statuses[task_id]
+    print(f"[DEBUG] Task ID {task_id} found. Status: {task_status}")
+    return JSONResponse(content=task_status)
 
 @router.post("/reset_user_data")
 async def reset_user_data(x_user_id: str = Header(..., description="클라이언트 UUID")):

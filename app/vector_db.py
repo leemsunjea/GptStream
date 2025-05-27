@@ -11,6 +11,8 @@ from app.config import settings
 from openai import OpenAI
 from typing import Optional
 import asyncio
+from app.routes.vector import task_statuses
+import fitz
 
 load_dotenv()
 client = OpenAI(api_key=settings.OPENAI_API_KEY)
@@ -184,3 +186,37 @@ async def search_similar_documents(message: str, user_id: str): # user_id 매개
         print(f"[DEBUG] search_similar_documents: 사용자 {user_id}에 대한 FAISS 검색 결과가 없습니다 (I is None or 비어있음).")
     
     return referenced_docs_details # 상세 정보 반환
+
+async def process_pdf(task_id: str, file_path: str, filename: str, session_factory, logs, user_id: str):
+    # 초기화
+    print(f"[DEBUG] process_pdf 시작 - Task ID: {task_id}, Filename: {filename}")
+    task_statuses[task_id] = {"status": "pending", "logs": [], "page_count": 0, "filename": filename}
+    print(f"[DEBUG] task_statuses 초기화 - Task ID: {task_id}, 상태: {task_statuses[task_id]}")
+
+    logs.append(f"처리 시작: {filename} (사용자: {user_id})")
+    task_statuses[task_id]["status"] = "processing"
+    task_statuses[task_id]["logs"] = logs
+    print(f"[DEBUG] task_statuses 업데이트 - Task ID: {task_id}, 상태: {task_statuses[task_id]}")
+
+    processed_successfully = False
+    page_count = 0
+
+    try:
+        # Create a new session for this task using the passed session_factory
+        async with session_factory() as session:
+            async with session.begin(): # Start a transaction
+                logs.append(f"DB 세션 시작됨 (사용자: {user_id}, 파일: {filename})")
+                print(f"[DEBUG] DB 세션 시작 - Task ID: {task_id}")
+
+                doc = fitz.open(file_path)
+                page_count = len(doc)
+                task_statuses[task_id]["page_count"] = page_count
+                logs.append(f"'{filename}' 에서 {page_count} 페이지 로드됨 (사용자: {user_id})")
+                print(f"[DEBUG] PDF 로드 완료 - Task ID: {task_id}, 페이지 수: {page_count}")
+
+                # ...existing code...
+
+    except Exception as e:
+        print(f"[ERROR] process_pdf 실패 - Task ID: {task_id}, 오류: {e}")
+    finally:
+        print(f"[DEBUG] process_pdf 종료 - Task ID: {task_id}, 최종 상태: {task_statuses.get(task_id)}")
