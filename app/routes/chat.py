@@ -155,8 +155,8 @@ async def chat_stream(request: Request, x_user_id: str = Header(..., description
             #         yield f"data: ---\\n" # 문서 정보 구분자
             #     yield "\\n"
 
-            # yield f"data: [DONE]\\n"
-            # yield "\\n"
+            yield f"data: [DONE]\\n"
+            yield "\\n"
 
         except Exception as e:
             yield f"data: [ERROR] {str(e)}\n"
