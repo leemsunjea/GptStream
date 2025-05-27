@@ -12,10 +12,10 @@ import fitz # fitz (PyMuPDF) 추가
 from openai import OpenAI # OpenAI 클라이언트 추가
 from app.config import settings # 설정값 로드
 import asyncio # asyncio 임포트 추가
+from app.vector_db import task_statuses
 
 router = APIRouter()
 upload_dir = "/tmp/temp_uploads"
-task_statuses = {}
 doc_store_lock = Lock()
 index_lock = Lock()
 client = OpenAI(api_key=settings.OPENAI_API_KEY) # OpenAI 클라이언트 초기화

@@ -11,7 +11,6 @@ from app.config import settings
 from openai import OpenAI
 from typing import Optional
 import asyncio
-from app.routes.vector import task_statuses
 import fitz
 
 load_dotenv()
@@ -20,6 +19,9 @@ client = OpenAI(api_key=settings.OPENAI_API_KEY)
 dimension = 1536
 index = faiss.IndexFlatL2(dimension)
 doc_store = []  # 전역 변수로 선언된 문서 저장소
+
+# Define task_statuses here to avoid circular import issues
+task_statuses = {}
 
 async def load_faiss_and_docstore():
     global doc_store, index

@@ -14,6 +14,8 @@ from sqlalchemy import func, select, delete # delete 추가
 from db.models import UserPreference, ChatHistory # ChatHistory 임포트 추가
 import traceback
 
+from app.vector_db import task_statuses
+
 router = APIRouter()
 
 openai.api_key = settings.OPENAI_API_KEY
