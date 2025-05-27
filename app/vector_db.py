@@ -127,6 +127,10 @@ async def pollTaskStatus(task_id, api_base, append_system_log):
                 if result.get("logs") and isinstance(result["logs"], list):
                     for msg in result["logs"]:
                         append_system_log(msg)
+                # HTTP 404 오류 처리 추가
+                if response.status == 404:
+                    append_system_log(f"작업 상태 확인 오류 (HTTP 404) - Task ID: {task_id}")
+                    return
         await asyncio.sleep(5)  # 5초마다 상태 확인
 
 async def search_similar_documents(message: str, user_id: str): # user_id 매개변수 추가

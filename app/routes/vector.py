@@ -83,12 +83,14 @@ async def save_upload_file(file: UploadFile, upload_dir: str):
     return file_path
 
 async def process_pdf(task_id: str, file_path: str, filename: str, session_factory, logs, user_id: str):
+    # 초기화
+    task_statuses[task_id] = {"status": "pending", "logs": [], "page_count": 0, "filename": filename}
+    logs.append(f"처리 시작: {filename} (사용자: {user_id})")
+    task_statuses[task_id]["status"] = "processing"
+    task_statuses[task_id]["logs"] = logs
     processed_successfully = False
     page_count = 0
     
-    logs.append(f"처리 시작: {filename} (사용자: {user_id})")
-    task_statuses[task_id] = {"status": "processing", "logs": logs, "page_count": 0, "filename": filename}
-
     try:
         # Create a new session for this task using the passed session_factory
         async with session_factory() as session:

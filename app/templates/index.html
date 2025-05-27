@@ -557,7 +557,7 @@
         }
 
         try {
-          const response = await fetch(`${API_BASE}/upload_pdf`, {
+          const response = await fetch(`${API_BASE}/vector/upload_pdf`, {
             method: "POST",
             headers: { // 헤더 추가
               "x-user-id": userId
@@ -588,6 +588,7 @@
             }
             // 폴링 시작
             if (result.task_id) {
+              console.log("Received task_id:", result.task_id); // task_id 확인
               pollTaskStatus(result.task_id);
             }
           } else {
