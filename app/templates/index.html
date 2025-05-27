@@ -557,7 +557,7 @@
         }
 
         try {
-          const response = await fetch(`${API_BASE}/vector/upload_pdf`, {
+          const response = await fetch(`${API_BASE}/vector/upload_pdf`, { // 경로 수정
             method: "POST",
             headers: { // 헤더 추가
               "x-user-id": userId
@@ -614,7 +614,7 @@
 
         const interval = setInterval(async () => {
           try {
-            const response = await fetch(`${API_BASE}/task_status/${task_id}`);
+            const response = await fetch(`${API_BASE}/vector/task_status/${task_id}`); // 경로 수정
             if (!response.ok) {
               console.error(`작업 상태 확인 오류: ${response.status}`);
               appendSystemLog(`작업 상태 확인 오류 (HTTP ${response.status}) - Task ID: ${task_id.substring(0,8)}`);
@@ -677,12 +677,12 @@
 
         appendSystemLog(`사용자 [${userId}] 데이터 초기화 요청 중...`);
         try {
-          const response = await fetch(`${API_BASE}/vector/reset_user_data`, {
+          const response = await fetch(`${API_BASE}/vector/reset_user_data`, { // 경로 수정 확인 (이미 /vector prefix 사용 중)
             method: "POST",
             headers: {
               "Content-Type": "application/json",
               "x-user-id": userId,
-            }
+            },
           });
           const result = await response.json();
           if (response.ok && result.success) {
@@ -714,7 +714,7 @@
         
         appendSystemLog(`사용자 [${userId}] 프롬프트 초기화 요청 중...`);
         try {
-          const response = await fetch(`${API_BASE}/chat/reset_prompt`, {
+          const response = await fetch(`${API_BASE}/chat/reset_prompt`, { // 경로 수정 확인 (이미 /chat prefix 사용 중)
             method: "POST",
             headers: {
               "Content-Type": "application/json",
