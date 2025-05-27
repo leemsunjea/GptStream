@@ -1,6 +1,6 @@
 from fastapi import APIRouter, File, UploadFile, BackgroundTasks, Header, HTTPException
 from fastapi.responses import JSONResponse
-from sqlalchemy import insert
+from sqlalchemy import insert, delete, select # delete 추가
 from db.database import async_session
 from db.models import documents, embeddings
 import os
@@ -43,7 +43,7 @@ async def generate_metadata(text_content: str, filename: str):
         summary = summary_response.choices[0].message.content.strip()
 
         # 응답 스타일 제안
-        response_style_prompt = f"""이 문서는 '{title}'에 관한 내용이며, 주요 내용은 다음과 같습니다: '{summary}'. 
+        response_style_prompt = f"""이 문서는 '{title}'에 관한 내용이며, 주요 내용은 '{summary}'. 
 이 문서를 참고하여 사용자에게 답변할 때 어떤 스타일로 응답하는 것이 좋을지 한국어로 간단히 제안해주세요. (예: 친절하고 상세하게, 전문적이고 간결하게 등)
 응답 스타일 제안:"""
         response_style_response = await asyncio.get_event_loop().run_in_executor(
@@ -218,3 +218,42 @@ async def upload_pdf(file: UploadFile = File(...), background_tasks: BackgroundT
 async def get_task_status(task_id: str):
     status = task_statuses.get(task_id, {"status": "pending"})
     return JSONResponse(status)
+
+@router.post("/reset_user_data")
+async def reset_user_data(x_user_id: str = Header(..., description="클라이언트 UUID")):
+    async with async_session() as session:
+        async with session.begin():
+            try:
+                # 1. 해당 사용자의 임베딩 데이터 삭제
+                # 먼저 삭제할 문서 ID들을 가져옵니다.
+                stmt_get_doc_ids = select(documents.c.id).where(documents.c.user_id == x_user_id)
+                result_doc_ids = await session.execute(stmt_get_doc_ids)
+                doc_ids_to_delete = [row[0] for row in result_doc_ids.fetchall()]
+
+                if doc_ids_to_delete:
+                    stmt_delete_embeddings = delete(embeddings).where(embeddings.c.document_id.in_(doc_ids_to_delete))
+                    await session.execute(stmt_delete_embeddings)
+                    print(f"[INFO] 사용자 {x_user_id}의 임베딩 데이터 삭제 완료 (문서 ID: {doc_ids_to_delete})")
+                else:
+                    print(f"[INFO] 사용자 {x_user_id}에 대한 문서가 없어 임베딩 데이터 삭제를 건너뜁니다.")
+
+                # 2. 해당 사용자의 문서 데이터 삭제
+                stmt_delete_documents = delete(documents).where(documents.c.user_id == x_user_id)
+                await session.execute(stmt_delete_documents)
+                print(f"[INFO] 사용자 {x_user_id}의 문서 데이터 삭제 완료")
+                
+                # 3. FAISS 인덱스 및 doc_store 재로드 (전체 재로드)
+                # 특정 사용자 데이터만 선택적으로 제거하는 것은 FAISS 인덱스 구조상 복잡할 수 있으므로,
+                # 여기서는 전체 재로드를 통해 반영합니다.
+                # 주의: 이 방식은 다른 사용자 데이터에도 영향을 줄 수 있으므로, 
+                # 사용자별 격리가 중요하다면 FAISS 인덱스 관리 전략 수정 필요.
+                async with doc_store_lock, index_lock:
+                    await load_faiss_and_docstore()
+                print(f"[INFO] FAISS 인덱스 및 문서 저장소 재로드 완료 (사용자 {x_user_id} 데이터 삭제 후)")
+
+                await session.commit()
+                return JSONResponse({"success": True, "message": "사용자 데이터가 성공적으로 초기화되었습니다."})
+            except Exception as e:
+                await session.rollback()
+                print(f"[ERROR] 사용자 {x_user_id} 데이터 초기화 중 오류: {e}")
+                raise HTTPException(status_code=500, detail=f"데이터 초기화 중 서버 오류 발생: {e}")
