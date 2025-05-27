@@ -28,10 +28,10 @@ BASE_SYSTEM_PROMPT_TEMPLATE = """
 
 {reference_document_section}
 
-이제 사용자의 다음 질문에 답변해주세요. 답변은 한국어로 작성하고, 답변 내용에 줄바꿈이 필요하면 '\\n'을 사용하세요.
+이제 사용자의 다음 질문에 답변해주세요. 답변은 한국어로 작성하고, 답변 내용에 줄바꿈이 필요하면 '\\\\n'을 사용하세요.
 """
 
-@router.post("/chat/stream")
+@router.post("/stream") # 경로 수정: "/chat/stream" -> "/stream"
 async def chat_stream(request: Request, x_user_id: str = Header(..., description="클라이언트 UUID")):
     data = await request.json()
     message = data.get("message", "")
