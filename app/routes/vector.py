@@ -114,10 +114,6 @@ async def process_pdf(task_id: str, file_path: str, filename: str, session_facto
                     # If no pages, we might still want to create a document entry with no content
                     # or handle as an error. For now, let's assume it might proceed with no pages.
 
-                # Generate metadata using the content of the first page (or whole doc if preferred)
-                metadata_dict = await generate_metadata(first_page_text_for_metadata, filename)
-                logs.append(f"메타데이터 생성됨: {metadata_dict} (사용자: {user_id}, 파일: {filename})")
-
                 if page_count == 0: # Handle case with no pages after metadata generation attempt
                     logs.append(f"'{filename}'에 처리할 페이지가 없습니다. DB 저장을 건너뜁니다.")
                 
@@ -127,14 +123,18 @@ async def process_pdf(task_id: str, file_path: str, filename: str, session_facto
                         logs.append(f"페이지 {page_num + 1} 내용이 비어있어 건너뜁니다 (사용자: {user_id}).")
                         continue
 
+                    # 각 페이지별로 개별 메타데이터 생성
+                    page_metadata_dict = await generate_metadata(page_content, f"{filename} - 페이지 {page_num + 1}")
+                    logs.append(f"페이지 {page_num + 1} 메타데이터 생성됨: {page_metadata_dict['title'][:50]}... (사용자: {user_id})")
+
                     stmt_doc = insert(documents).values(
                         user_id=user_id,
                         pdf_name=filename,
                         page_number=page_num,
                         content=page_content,
-                        title=metadata_dict["title"],
-                        summary=metadata_dict["summary"],
-                        response_style=metadata_dict["response_style"]
+                        title=page_metadata_dict["title"],
+                        summary=page_metadata_dict["summary"],
+                        response_style=page_metadata_dict["response_style"]
                         # created_at은 DB에서 자동으로 설정됨 (server_default=func.now())
                     ).returning(documents.c.id)
                     

@@ -76,29 +76,51 @@ async def chat_stream(request: Request, x_user_id: str = Header(..., description
     # 문서 검색 및 참조 처리
     context_text_for_prompt = ""
     referenced_docs_for_response_display = [] # 전체 문서 메타데이터를 담을 리스트
-    # 검색된 각 문서는 이제 텍스트뿐만 아니라 title, summary, response_style, created_at, pdf_name 등의 메타데이터를 포함한 딕셔너리입니다.
+    recommended_response_style = ""
+    
     if index.ntotal > 0:
         retrieved_documents_details = await search_similar_documents(message, x_user_id)
         if retrieved_documents_details:
             print(f"[DEBUG] 사용자 {x_user_id}에 대해 검색된 관련 문서 수: {len(retrieved_documents_details)}")
             
-            # 프롬프트에 포함할 컨텍스트 생성 (예: 각 문서의 텍스트와 일부 메타데이터)
+            # 프롬프트에 포함할 컨텍스트 생성 (메타데이터 포함)
             context_parts = []
+            response_styles = []
             for doc_detail in retrieved_documents_details:
-                # doc_detail은 이제 딕셔너리입니다.
                 text_content = doc_detail.get('text', '')
                 title = doc_detail.get('title', '제목 없음')
-                # 필요에 따라 summary, created_at 등 다른 메타데이터도 여기에 추가할 수 있습니다.
-                context_parts.append(f"문서 제목: {title}\n내용: {text_content}") 
+                summary = doc_detail.get('summary', '')
+                response_style = doc_detail.get('response_style', '')
+                pdf_name = doc_detail.get('pdf_name', '')
+                
+                # 메타데이터가 포함된 컨텍스트 생성
+                context_part = f"[문서: {pdf_name}]\n제목: {title}"
+                if summary:
+                    context_part += f"\n요약: {summary}"
+                context_part += f"\n내용: {text_content}"
+                context_parts.append(context_part)
+                
+                # 응답 스타일 수집
+                if response_style:
+                    response_styles.append(response_style)
+            
             context_text_for_prompt = "\n\n".join(context_parts)
             
-            # 응답에 표시할 참조 정보 (예: 전체 메타데이터 또는 선택적 정보)
-            # 여기서는 검색된 각 항목(문단과 그 메타데이터)을 그대로 사용합니다.
+            # 가장 빈번한 응답 스타일 선택
+            if response_styles:
+                recommended_response_style = max(set(response_styles), key=response_styles.count)
+                print(f"[DEBUG] 권장 응답 스타일: {recommended_response_style}")
+            
             referenced_docs_for_response_display = retrieved_documents_details 
 
     reference_document_section_content = ""
     if context_text_for_prompt:
-        reference_document_section_content = f"""다음은 사용자가 업로드한 문서에서 현재 대화와 관련성이 높은 내용입니다. 각 문서는 제목과 내용으로 구성되어 있습니다. 이 내용을 최우선으로 참고하여 사용자의 질문에 답변해주세요.
+        style_instruction = ""
+        if recommended_response_style:
+            style_instruction = f"\n\n응답 스타일 지침: {recommended_response_style} 스타일로 답변해주세요."
+        
+        reference_document_section_content = f"""다음은 사용자가 업로드한 문서에서 현재 대화와 관련성이 높은 내용입니다. 각 문서는 제목, 요약, 내용으로 구성되어 있습니다. 이 내용을 최우선으로 참고하여 사용자의 질문에 답변해주세요.{style_instruction}
+
 [참고 문서 내용 시작]
 {context_text_for_prompt}
 [참고 문서 내용 끝]
