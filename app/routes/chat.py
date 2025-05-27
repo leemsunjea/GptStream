@@ -11,6 +11,8 @@ from db.database import async_session
 from app.vector_db import get_embedding_async as get_embedding, index, doc_store, search_similar_documents # search_similar_documents 추가
 from openai import OpenAI
 from sqlalchemy import func, select, delete # delete 추가
+from db.models import UserPreference, ChatHistory # ChatHistory 임포트 추가
+import traceback
 
 router = APIRouter()
 
@@ -164,28 +166,55 @@ async def chat_stream(request: Request, x_user_id: str = Header(..., description
 
 @router.post("/reset_prompt")
 async def reset_user_prompt(x_user_id: str = Header(..., description="클라이언트 UUID")):
+    """특정 사용자의 시스템 프롬프트를 기본값으로 초기화합니다."""
+    logs = []
+    logs.append(f"사용자 [{x_user_id}] 프롬프트 초기화 시작...")
+    print(f"[INFO] 사용자 {x_user_id}의 프롬프트 초기화 요청 수신.")
+
     async with async_session() as session:
-        async with session.begin():
+        async with session.begin(): # 트랜잭션 시작
             try:
-                # 사용자 정의 프롬프트 삭제 (또는 기본값으로 업데이트)
-                stmt = delete(UserPreference).where(UserPreference.user_id == x_user_id)
-                result = await session.execute(stmt)
-                
-                if result.rowcount > 0:
-                    await session.commit()
-                    print(f"[INFO] 사용자 {x_user_id}의 시스템 프롬프트 초기화 완료.")
-                    return JSONResponse({"success": True, "message": "사용자 정의 프롬프트가 성공적으로 초기화되었습니다."})
+                # 사용자 프롬프트 조회
+                user_pref_result = await session.execute(
+                    select(UserPreference).where(UserPreference.user_id == x_user_id)
+                )
+                user_pref = user_pref_result.scalars().first()
+
+                if user_pref:
+                    # 기본 프롬프트로 설정 (첫 번째 DEFAULT_SYSTEM_PROMPTS 또는 빈 문자열)
+                    # main.py 에서 DEFAULT_SYSTEM_PROMPTS 를 가져올 수 없으므로, 여기서 직접 정의하거나 다른 방식으로 관리 필요
+                    # 여기서는 간단하게 빈 문자열로 초기화하거나, 특정 기본값을 설정합니다.
+                    default_prompt_for_user = "You are a friendly and helpful AI assistant." # 예시 기본 프롬프트
+                    user_pref.system_prompt = default_prompt_for_user
+                    user_pref.updated_at = func.now() # 업데이트 시간 기록
+                    await session.commit() # 변경사항 커밋
+                    logs.append(f"사용자 [{x_user_id}]의 프롬프트를 기본값으로 성공적으로 초기화했습니다.")
+                    print(f"[INFO] 사용자 {x_user_id}의 프롬프트 초기화 완료.")
+                    return JSONResponse({
+                        "success": True, 
+                        "message": f"사용자 [{x_user_id}]의 프롬프트가 기본값으로 초기화되었습니다.",
+                        "new_system_prompt": default_prompt_for_user,
+                        "logs": logs
+                    })
                 else:
-                    # 사용자에 대한 UserPreference 항목이 없을 수도 있습니다.
-                    # 이 경우, 이미 기본 프롬프트를 사용하고 있는 것으로 간주할 수 있습니다.
-                    await session.commit() # 변경 사항이 없더라도 트랜잭션 완료
-                    print(f"[INFO] 사용자 {x_user_id}에 대한 맞춤 시스템 프롬프트가 없어 초기화를 건너뜁니다.")
-                    return JSONResponse({"success": True, "message": "사용자 정의 프롬프트가 존재하지 않아, 이미 기본값을 사용 중입니다."})
+                    logs.append(f"사용자 [{x_user_id}]에 대한 프롬프트 설정을 찾을 수 없습니다. 초기화할 프롬프트가 없습니다.")
+                    print(f"[INFO] 사용자 {x_user_id}의 프롬프트 설정 없음.")
+                    # 이 경우 클라이언트에게 성공으로 응답할지, 오류로 응답할지 결정 필요
+                    return JSONResponse({
+                        "success": True, # 또는 False, 상황에 따라
+                        "message": f"사용자 [{x_user_id}]에 대한 프롬프트 설정을 찾을 수 없습니다.",
+                        "logs": logs
+                    }, status_code=200) # 또는 404
 
             except Exception as e:
-                await session.rollback()
-                print(f"[ERROR] 사용자 {x_user_id} 프롬프트 초기화 중 오류: {e}")
-                raise HTTPException(status_code=500, detail=f"프롬프트 초기화 중 서버 오류 발생: {e}")
+                await session.rollback() # 오류 발생 시 롤백
+                error_tb = traceback.format_exc()
+                logs.append(f"프롬프트 초기화 중 서버 오류 발생: {str(e)}")
+                print(f"[ERROR] 사용자 {x_user_id} 프롬프트 초기화 중 오류: {e}\n{error_tb}")
+                return JSONResponse(
+                    status_code=500, 
+                    content={"success": False, "detail": f"프롬프트 초기화 중 서버 오류 발생: {str(e)}", "logs": logs}
+                )
 
 @router.post("/add_prompt")
 async def add_user_prompt(request: Request, x_user_id: str = Header(..., description="클라이언트 UUID")): # x_user_id 추가

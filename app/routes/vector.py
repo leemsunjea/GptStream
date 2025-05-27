@@ -1,17 +1,17 @@
 from fastapi import APIRouter, File, UploadFile, BackgroundTasks, Header, HTTPException
 from fastapi.responses import JSONResponse
-from sqlalchemy import insert, delete, select # delete 추가
+from sqlalchemy import insert, delete, select # delete, select 추가
 from db.database import async_session
 from db.models import documents, embeddings
-import os
-import fitz  # PyMuPDF
-import numpy as np
-from app.vector_db import get_embedding_async, split_text_to_paragraphs, doc_store, index, load_faiss_and_docstore
-import asyncio
-import uuid
-from asyncio import Lock
+from app.vector_db import get_embedding_async, split_text_to_paragraphs, doc_store, index, load_faiss_and_docstore # load_faiss_and_docstore 추가
+from asyncio import Lock # Lock 추가
+import traceback # traceback 추가
+import uuid # uuid 추가
+import os # os 추가
+import fitz # fitz (PyMuPDF) 추가
 from openai import OpenAI # OpenAI 클라이언트 추가
 from app.config import settings # 설정값 로드
+import asyncio # asyncio 임포트 추가
 
 router = APIRouter()
 upload_dir = "/tmp/temp_uploads"
@@ -221,39 +221,63 @@ async def get_task_status(task_id: str):
 
 @router.post("/reset_user_data")
 async def reset_user_data(x_user_id: str = Header(..., description="클라이언트 UUID")):
+    """
+    특정 사용자의 모든 문서, 임베딩 데이터를 삭제하고,
+    관련 FAISS 인덱스 및 인메모리 doc_store를 새로고침합니다.
+    """
+    logs = []
+    logs.append(f"사용자 [{x_user_id}] 데이터 초기화 시작...")
+    print(f"[INFO] 사용자 {x_user_id}의 데이터 초기화 요청 수신.")
+
     async with async_session() as session:
-        async with session.begin():
+        async with session.begin(): # 트랜잭션 시작
             try:
-                # 1. 해당 사용자의 임베딩 데이터 삭제
-                # 먼저 삭제할 문서 ID들을 가져옵니다.
-                stmt_get_doc_ids = select(documents.c.id).where(documents.c.user_id == x_user_id)
-                result_doc_ids = await session.execute(stmt_get_doc_ids)
-                doc_ids_to_delete = [row[0] for row in result_doc_ids.fetchall()]
+                # 1. 해당 사용자의 문서 ID 조회
+                doc_ids_result = await session.execute(
+                    select(documents.c.id).where(documents.c.user_id == x_user_id)
+                )
+                doc_ids = [row[0] for row in doc_ids_result.fetchall()]
+                logs.append(f"사용자 [{x_user_id}]의 문서 ID {len(doc_ids)}개 조회 완료: {doc_ids}")
+                print(f"[DEBUG] 사용자 {x_user_id}의 문서 ID: {doc_ids}")
 
-                if doc_ids_to_delete:
-                    stmt_delete_embeddings = delete(embeddings).where(embeddings.c.document_id.in_(doc_ids_to_delete))
-                    await session.execute(stmt_delete_embeddings)
-                    print(f"[INFO] 사용자 {x_user_id}의 임베딩 데이터 삭제 완료 (문서 ID: {doc_ids_to_delete})")
+                if doc_ids:
+                    # 2. 해당 문서 ID에 연결된 임베딩 삭제
+                    delete_embeddings_stmt = delete(embeddings).where(embeddings.c.document_id.in_(doc_ids))
+                    embedding_delete_result = await session.execute(delete_embeddings_stmt)
+                    logs.append(f"사용자 [{x_user_id}]의 임베딩 {embedding_delete_result.rowcount}개 삭제 완료.")
+                    print(f"[INFO] 사용자 {x_user_id}의 임베딩 {embedding_delete_result.rowcount}건 삭제 완료.")
+
+                    # 3. 해당 사용자의 문서 삭제
+                    delete_documents_stmt = delete(documents).where(documents.c.id.in_(doc_ids)) # user_id로 직접 삭제도 가능
+                    document_delete_result = await session.execute(delete_documents_stmt)
+                    logs.append(f"사용자 [{x_user_id}]의 문서 {document_delete_result.rowcount}개 삭제 완료.")
+                    print(f"[INFO] 사용자 {x_user_id}의 문서 {document_delete_result.rowcount}건 삭제 완료.")
                 else:
-                    print(f"[INFO] 사용자 {x_user_id}에 대한 문서가 없어 임베딩 데이터 삭제를 건너뜁니다.")
+                    logs.append(f"사용자 [{x_user_id}]에게 삭제할 문서 데이터가 없습니다.")
+                    print(f"[INFO] 사용자 {x_user_id}에게 삭제할 문서 데이터가 없습니다.")
 
-                # 2. 해당 사용자의 문서 데이터 삭제
-                stmt_delete_documents = delete(documents).where(documents.c.user_id == x_user_id)
-                await session.execute(stmt_delete_documents)
-                print(f"[INFO] 사용자 {x_user_id}의 문서 데이터 삭제 완료")
-                
-                # 3. FAISS 인덱스 및 doc_store 재로드 (전체 재로드)
-                # 특정 사용자 데이터만 선택적으로 제거하는 것은 FAISS 인덱스 구조상 복잡할 수 있으므로,
-                # 여기서는 전체 재로드를 통해 반영합니다.
-                # 주의: 이 방식은 다른 사용자 데이터에도 영향을 줄 수 있으므로, 
-                # 사용자별 격리가 중요하다면 FAISS 인덱스 관리 전략 수정 필요.
-                async with doc_store_lock, index_lock:
+                # 4. FAISS 인덱스 및 doc_store 재로드 (전역 상태 업데이트)
+                logs.append(f"FAISS 인덱스 및 문서 저장소 재로드 시작...")
+                print(f"[INFO] FAISS 인덱스 및 문서 저장소 재로드 시작 (사용자 {x_user_id} 데이터 초기화 후).")
+                async with doc_store_lock, index_lock: # 전역 Lock 사용 가정
                     await load_faiss_and_docstore()
-                print(f"[INFO] FAISS 인덱스 및 문서 저장소 재로드 완료 (사용자 {x_user_id} 데이터 삭제 후)")
+                logs.append(f"FAISS 인덱스 및 문서 저장소 재로드 완료.")
+                print(f"[INFO] FAISS 인덱스 및 문서 저장소 재로드 완료.")
+                
+                await session.commit() # 명시적 커밋
+                return JSONResponse({
+                    "success": True, 
+                    "message": f"사용자 [{x_user_id}]의 데이터가 성공적으로 초기화되었습니다.",
+                    "logs": logs
+                })
 
-                await session.commit()
-                return JSONResponse({"success": True, "message": "사용자 데이터가 성공적으로 초기화되었습니다."})
             except Exception as e:
-                await session.rollback()
-                print(f"[ERROR] 사용자 {x_user_id} 데이터 초기화 중 오류: {e}")
-                raise HTTPException(status_code=500, detail=f"데이터 초기화 중 서버 오류 발생: {e}")
+                await session.rollback() # 명시적 롤백
+                error_tb = traceback.format_exc()
+                logs.append(f"데이터 초기화 중 서버 오류 발생: {str(e)}")
+                print(f"[ERROR] 사용자 {x_user_id} 데이터 초기화 중 오류: {e}\n{error_tb}")
+                # HTTPException 대신 JSONResponse 사용 통일성을 위해
+                return JSONResponse(
+                    status_code=500, 
+                    content={"success": False, "detail": f"데이터 초기화 중 서버 오류 발생: {str(e)}", "logs": logs}
+                )

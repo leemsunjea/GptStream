@@ -95,6 +95,6 @@ async def gateway_timeout_handler(request, exc):
 
 # 라우터 등록
 app.include_router(home.router)
-app.include_router(chat.router)
-app.include_router(vector.router) # app.routes.vector.router가 여기서 올바르게 포함됩니다.
+app.include_router(chat.router, prefix="/chat", tags=["Chat"])
+app.include_router(vector.router, prefix="/vector", tags=["Vector"]) # app.routes.vector.router가 여기서 올바르게 포함됩니다.
 # app.include_router(router) # 이 줄은 app.routes.vector.router를 의미하며, 위에서 명시적으로 포함했으므로 중복. 제거.
