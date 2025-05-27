@@ -28,7 +28,7 @@ BASE_SYSTEM_PROMPT_TEMPLATE = """
 
 {reference_document_section}
 
-이제 사용자의 다음 질문에 답변해주세요. 답변은 한국어로 작성하고, 답변 내용에 줄바꿈이 필요하면 '\\\\n'을 사용하세요.
+이제 사용자의 다음 질문에 답변해주세요. 답변은 한국어로 작성해주세요.
 """
 
 @router.post("/stream") # 경로 수정: "/chat/stream" -> "/stream"
