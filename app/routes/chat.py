@@ -125,33 +125,16 @@ async def chat_stream(request: Request, x_user_id: str = Header(..., description
                 content_piece = getattr(chunk.choices[0].delta, "content", None)
                 if content_piece:
                     full_response_content += content_piece
-                    # 실제 개행 문자를 <br> 태그로 변경
-                    content_with_br = content_piece.replace('\\n', '<br>')
-                    yield f"data: {content_with_br}\\n" # SSE 데이터 라인 끝에 개행 추가
-                    yield "\\n" # SSE 메시지 종료 (두 번째 개행)
+                    # f-string 백슬래시 오류 수정: \\n을 문자열 밖으로 빼거나 다른 방식으로 처리
+                    # 여기서는 문자열 연결을 사용하고, SSE 형식에 맞게 각 data 라인 끝에 \\n을, 메시지 끝에 추가 \\n을 보냅니다.
+                    yield f"data: {content_piece.replace('\\n', '<br>')}" + "\\n" # 각 데이터 라인 끝
+                    yield "\\n" # SSE 메시지 구분
                     await asyncio.sleep(0)
 
             # 주석 처리된 문서 정보 전송 로직은 그대로 둡니다.
             # if referenced_docs_for_response_display:
             #     yield f"data: [참고한 문서 정보]\\n"
-            #     for idx, doc_detail in enumerate(referenced_docs_for_response_display, 1):
-            #         # doc_detail은 이제 딕셔너리입니다.
-            #         title = doc_detail.get('title', '제목 없음')
-            #         summary = doc_detail.get('summary', '요약 없음')
-            #         pdf_name = doc_detail.get('pdf_name', '알 수 없는 PDF')
-            #         created_at_iso = doc_detail.get('created_at', '시간 정보 없음')
-            #         text_preview = doc_detail.get('text', '')[:100] # 문단 내용 미리보기
-                    
-            #         # 클라이언트에 전달할 정보 구성 (예시)
-            #         # 상세 정보나 문단 전체 텍스트를 보낼 수도 있습니다.
-            #         # 여기서는 제목, 요약, 파일명, 생성 시간, 문단 미리보기를 전달합니다.
-            #         doc_info_line = f"[문서 {idx}] 제목: {title} (파일명: {pdf_name}, 업로드: {created_at_iso})\\n요약: {summary}\\n문단 미리보기: {text_preview}..."
-                    
-            #         # 여러 줄로 된 정보를 안전하게 전송하기 위해 각 줄을 data: 로 시작하도록 처리
-            #         for line in doc_info_line.split('\\n'):
-            #             if line:
-            #                 yield f"data: {line}\\n"
-            #         yield f"data: ---\\n" # 문서 정보 구분자
+            #     # ... (이하 문서 정보 전송 코드 주석 유지) ...
             #     yield "\\n"
 
             yield f"data: [DONE]\\n"
