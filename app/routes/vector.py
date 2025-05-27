@@ -23,13 +23,13 @@ client = OpenAI(api_key=settings.OPENAI_API_KEY) # OpenAI 클라이언트 초기
 async def generate_metadata(text_content: str, filename: str):
     """문서 내용과 파일명을 기반으로 메타데이터를 생성합니다."""
     try:
-        # 제목 생성 (첫 번째 줄 또는 파일명 활용)
-        title = text_content.split('\\n')[0][:100] if text_content else filename
+        # 제목 생성 (첫 번째 줄 또는 파일명 활용) - 잘못된 이스케이프 문자 수정
+        title = text_content.split('\n')[0][:100] if text_content else filename
 
         # 요약 생성
         summary_prompt = f"""다음 텍스트를 한국어로 2-3문장으로 요약해주세요:
 ---
-{text_content[:2000]} # API 길이 제한 고려
+{text_content[:2000]}
 ---
 요약:"""
         summary_response = await asyncio.get_event_loop().run_in_executor(
@@ -56,6 +56,8 @@ async def generate_metadata(text_content: str, filename: str):
         )
         response_style = response_style_response.choices[0].message.content.strip()
 
+        print(f"[DEBUG] 메타데이터 생성 완료 - title: {title[:50]}..., summary: {summary[:50]}..., response_style: {response_style}")
+
         return {
             "title": title,
             "summary": summary,
@@ -63,6 +65,8 @@ async def generate_metadata(text_content: str, filename: str):
         }
     except Exception as e:
         print(f"[ERROR] 메타데이터 생성 중 오류: {e}")
+        import traceback
+        print(f"[ERROR] 메타데이터 생성 실패 상세: {traceback.format_exc()}")
         return {
             "title": filename, # 오류 시 파일명을 기본 제목으로 사용
             "summary": "요약 생성 중 오류 발생",
