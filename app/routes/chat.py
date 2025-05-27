@@ -125,14 +125,12 @@ async def chat_stream(request: Request, x_user_id: str = Header(..., description
                 content_piece = getattr(chunk.choices[0].delta, "content", None)
                 if content_piece:
                     full_response_content += content_piece
-                    processed_content_piece = content_piece.replace('\\\\n', '\\n')
-                    lines = processed_content_piece.split('\\n')
-                    for line in lines:
-                        if line:
-                            yield f"data: {line}\\n"
-                    yield "\\n"
+                    # 줄바꿈 처리 로직 제거 및 직접 스트리밍
+                    yield f"data: {content_piece.replace('\\n', '<br>')}\\n" # 클라이언트에서 HTML로 처리하도록 <br> 태그 사용
+                    yield "\\n" # SSE 메시지 종료
                     await asyncio.sleep(0)
 
+            # 주석 처리된 문서 정보 전송 로직은 그대로 둡니다.
             # if referenced_docs_for_response_display:
             #     yield f"data: [참고한 문서 정보]\\n"
             #     for idx, doc_detail in enumerate(referenced_docs_for_response_display, 1):
