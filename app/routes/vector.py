@@ -26,12 +26,24 @@ async def generate_metadata(text_content: str, filename: str):
         # 제목 생성 (첫 번째 줄 또는 파일명 활용) - 잘못된 이스케이프 문자 수정
         title = text_content.split('\n')[0][:100] if text_content else filename
 
-        # 요약 생성
-        summary_prompt = f"""다음 텍스트를 한국어로 2-3문장으로 요약해주세요:
+        # 목차 정보 확인
+        toc_keywords = ["목차", "차례", "table of contents", "contents", "index"]
+        has_toc = any(keyword in text_content.lower() for keyword in toc_keywords)
+        
+        # 요약 생성 (목차가 있는 경우 이를 언급)
+        if has_toc:
+            summary_prompt = f"""다음 텍스트를 한국어로 2-3문장으로 요약해주세요. 이 문서에 목차나 구성 정보가 포함되어 있다면 이를 언급해주세요:
 ---
 {text_content[:2000]}
 ---
 요약:"""
+        else:
+            summary_prompt = f"""다음 텍스트를 한국어로 2-3문장으로 요약해주세요:
+---
+{text_content[:2000]}
+---
+요약:"""
+            
         summary_response = await asyncio.get_event_loop().run_in_executor(
             None,
             lambda: client.chat.completions.create(

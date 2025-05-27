@@ -118,8 +118,40 @@ async def get_embedding_async(text: str) -> Optional[np.ndarray]:
         return None
 
 def split_text_to_paragraphs(text: str) -> list:
-    # 간단한 문단 분리 로직 (예시)
-    return [p.strip() for p in text.split("\n\n") if p.strip()]
+    """
+    텍스트를 문단으로 분리하되, 목차와 같은 구조적 정보를 보존하는 개선된 로직
+    """
+    paragraphs = []
+    
+    # 먼저 기본 문단 분리
+    basic_paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
+    
+    for paragraph in basic_paragraphs:
+        # 목차 관련 패턴 감지
+        is_table_of_contents = any(keyword in paragraph.lower() for keyword in [
+            "목차", "차례", "table of contents", "contents", "index"
+        ])
+        
+        # 긴 문단을 더 작은 단위로 분리 (단, 목차는 보존)
+        if len(paragraph) > 1000 and not is_table_of_contents:
+            # 문장 단위로 분리하되 너무 작지 않게
+            sentences = paragraph.split('. ')
+            current_chunk = ""
+            
+            for sentence in sentences:
+                if len(current_chunk + sentence) < 800:
+                    current_chunk += sentence + ". "
+                else:
+                    if current_chunk.strip():
+                        paragraphs.append(current_chunk.strip())
+                    current_chunk = sentence + ". "
+            
+            if current_chunk.strip():
+                paragraphs.append(current_chunk.strip())
+        else:
+            paragraphs.append(paragraph)
+    
+    return paragraphs
 
 async def pollTaskStatus(task_id, api_base, append_system_log):
 
@@ -143,14 +175,25 @@ async def search_similar_documents(message: str, user_id: str): # user_id 매개
         print(f"[DEBUG] search_similar_documents: 인덱스가 비어 있습니다 (index.ntotal: {index.ntotal}). 사용자 {user_id}에 대한 검색 문서가 없습니다.")
         return []
 
-    query_embedding = await get_embedding_async(message)
+    # 목차 관련 키워드 확장 검색
+    table_of_contents_keywords = ["목차", "차례", "목록", "인덱스", "구성", "내용"]
+    is_toc_query = any(keyword in message for keyword in table_of_contents_keywords)
+    
+    # 검색 쿼리 확장 (목차 관련 질문인 경우)
+    search_query = message
+    if is_toc_query:
+        search_query = f"{message} 목차 차례 구성 내용"
+        print(f"[DEBUG] 목차 관련 질문 감지. 확장된 검색 쿼리: '{search_query}'")
+
+    query_embedding = await get_embedding_async(search_query)
     if query_embedding is None:
         print(f"[ERROR] search_similar_documents: 쿼리 임베딩 생성 실패: 사용자 {user_id}.")
         return []
 
     print(f"[DEBUG] search_similar_documents: FAISS 인덱스 검색 (총 크기: {index.ntotal}) - 사용자: {user_id}")
     try:
-        k_search = min(index.ntotal, 7) 
+        # 목차 관련 질문인 경우 더 많은 결과 검색
+        k_search = min(index.ntotal, 15 if is_toc_query else 7) 
         print(f"[DEBUG] search_similar_documents: k_search 값: {k_search}")
         if k_search == 0 : 
              print(f"[DEBUG] search_similar_documents: 인덱스가 사실상 비어있음 (k_search=0). 사용자 {user_id}.")
@@ -174,9 +217,19 @@ async def search_similar_documents(message: str, user_id: str): # user_id 매개
                 item = doc_store[doc_index]
                 # user_id로 필터링하고, 아직 추가되지 않은 doc_id인 경우에만 추가
                 if isinstance(item, dict) and item.get('user_id') == user_id:
-                    # 검색 결과에는 문단 텍스트와 함께 전체 문서의 메타데이터를 포함시킬 수 있음
-                    # 여기서는 검색된 문단(item) 자체를 반환 (이미 메타데이터 포함)
-                    referenced_docs_details.append(item) 
+                    # 목차 관련 질문인 경우 목차 관련 내용 우선 선택
+                    if is_toc_query:
+                        item_text = item.get('text', '').lower()
+                        if any(keyword in item_text for keyword in table_of_contents_keywords):
+                            # 목차 관련 내용을 최상위로 이동
+                            referenced_docs_details.insert(0, item)
+                            print(f"[DEBUG] 목차 관련 내용 우선 선택: {item.get('doc_id')}")
+                        else:
+                            referenced_docs_details.append(item)
+                    else:
+                        # 검색 결과에는 문단 텍스트와 함께 전체 문서의 메타데이터를 포함시킬 수 있음
+                        # 여기서는 검색된 문단(item) 자체를 반환 (이미 메타데이터 포함)
+                        referenced_docs_details.append(item) 
                     print(f"[DEBUG] search_similar_documents: 사용자 {user_id} 문서 일치! referenced_docs_details에 추가됨: {item.get('doc_id')}, {item.get('title')}")
                 else:
                     print(f"[DEBUG] search_similar_documents: 사용자 {user_id} 문서 불일치 (doc_store user_id: {item.get('user_id')}).")

@@ -85,7 +85,16 @@ async def chat_stream(request: Request, x_user_id: str = Header(..., description
         "방금 저장", "최근 저장", "저장한 문서", "새로 올린", "새로 업로드", "새 문서",
         "요약해", "정리해", "설명해", "알려줘", "뭐가 있어", "어떤 내용"
     ]
+    
+    # 목차 관련 키워드 확장
+    table_of_contents_keywords = [
+        "목차", "차례", "목록", "구성", "내용", "인덱스", "개요", "구조",
+        "table of contents", "contents", "index", "outline", "structure",
+        "전체", "모든", "다 알려", "전부", "리스트", "항목"
+    ]
+    
     is_recent_doc_query = any(keyword in message for keyword in recent_doc_keywords)
+    is_toc_query = any(keyword in message for keyword in table_of_contents_keywords)
     
     if index.ntotal > 0:
         print(f"[DEBUG] FAISS 인덱스에 {index.ntotal}개 벡터 로드됨. 문서 검색 시작...")
@@ -95,6 +104,10 @@ async def chat_stream(request: Request, x_user_id: str = Header(..., description
             print(f"[DEBUG] 최근 업로드 문서 관련 질문 감지: '{message}'")
             # 최근 업로드된 문서를 우선적으로 검색
             retrieved_documents_details = await search_recent_documents_first(message, x_user_id)
+        elif is_toc_query:
+            print(f"[DEBUG] 목차 관련 질문 감지: '{message}'")
+            # 목차 관련 검색 수행 (확장된 검색)
+            retrieved_documents_details = await search_similar_documents(message, x_user_id)
         else:
             retrieved_documents_details = await search_similar_documents(message, x_user_id)
             
@@ -142,7 +155,12 @@ async def chat_stream(request: Request, x_user_id: str = Header(..., description
         if recommended_response_style:
             style_instruction = f"\n\n응답 스타일 지침: {recommended_response_style} 스타일로 답변해주세요."
         
-        reference_document_section_content = f"""다음은 사용자가 업로드한 문서에서 현재 대화와 관련성이 높은 내용입니다. 각 문서는 제목, 요약, 내용으로 구성되어 있습니다. 이 내용을 최우선으로 참고하여 사용자의 질문에 답변해주세요.{style_instruction}
+        # 목차 관련 질문인 경우 특별한 지침 추가
+        toc_instruction = ""
+        if is_toc_query:
+            toc_instruction = f"\n\n특별 지침: 사용자가 목차, 차례, 구성에 대해 질문했습니다. 문서의 전체 구조와 목차 정보를 최대한 상세하게 정리하여 제공해주세요. 각 장이나 섹션의 제목과 주요 내용을 포함하여 답변해주세요."
+        
+        reference_document_section_content = f"""다음은 사용자가 업로드한 문서에서 현재 대화와 관련성이 높은 내용입니다. 각 문서는 제목, 요약, 내용으로 구성되어 있습니다. 이 내용을 최우선으로 참고하여 사용자의 질문에 답변해주세요.{style_instruction}{toc_instruction}
 
 [참고 문서 내용 시작]
 {context_text_for_prompt}
