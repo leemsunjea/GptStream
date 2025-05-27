@@ -106,26 +106,63 @@ async def process_pdf(task_id: str, file_path: str, filename: str, session_facto
                 task_statuses[task_id]["page_count"] = page_count
                 logs.append(f"'{filename}' 에서 {page_count} 페이지 로드됨 (사용자: {user_id})")
 
-                first_page_text_for_metadata = ""
-                if page_count > 0:
-                    first_page_text_for_metadata = doc[0].get_text("text")
-                else:
-                    logs.append(f"'{filename}'에 페이지가 없어 메타데이터 생성을 건너뜁니다.")
-                    # If no pages, we might still want to create a document entry with no content
-                    # or handle as an error. For now, let's assume it might proceed with no pages.
-
-                if page_count == 0: # Handle case with no pages after metadata generation attempt
+                if page_count == 0:
                     logs.append(f"'{filename}'에 처리할 페이지가 없습니다. DB 저장을 건너뜁니다.")
+                    return
                 
+                # 전체 문서의 텍스트 수집 (메타데이터 생성용) - 더 많은 페이지 사용
+                all_pages_text = ""
+                sample_pages = min(page_count, 5)  # 최대 5페이지까지 사용하여 문서 전체 이해
+                for i in range(sample_pages):
+                    page_text = doc[i].get_text("text")
+                    if page_text.strip():
+                        all_pages_text += page_text + "\n\n"
+                
+                # 문서 전체를 대표하는 글로벌 메타데이터 생성
+                global_metadata_dict = await generate_metadata(all_pages_text[:5000], filename)  # 5000자로 확장
+                logs.append(f"문서 전체 메타데이터 생성됨 (샘플 페이지: {sample_pages}): {global_metadata_dict['title'][:50]}... (사용자: {user_id})")
+
                 for page_num in range(page_count):
                     page_content = doc[page_num].get_text("text")
                     if not page_content.strip():
                         logs.append(f"페이지 {page_num + 1} 내용이 비어있어 건너뜁니다 (사용자: {user_id}).")
                         continue
 
-                    # 각 페이지별로 개별 메타데이터 생성
-                    page_metadata_dict = await generate_metadata(page_content, f"{filename} - 페이지 {page_num + 1}")
-                    logs.append(f"페이지 {page_num + 1} 메타데이터 생성됨: {page_metadata_dict['title'][:50]}... (사용자: {user_id})")
+                    # 페이지별 고유 메타데이터 생성
+                    page_title_raw = page_content.split('\n')[0][:100] if page_content.strip() else ""
+                    page_title = page_title_raw if page_title_raw.strip() else f"{global_metadata_dict['title']} - 페이지 {page_num + 1}"
+                    
+                    # 페이지 내용이 충분한 경우 페이지별 요약 생성
+                    if len(page_content.strip()) > 300:  # 최소 300자 이상일 때만 개별 요약 생성
+                        try:
+                            page_summary_prompt = f"""다음 페이지 내용을 한국어로 1-2문장으로 간단히 요약해주세요:
+---
+{page_content[:1500]}
+---
+요약:"""
+                            page_summary_response = await asyncio.get_event_loop().run_in_executor(
+                                None,
+                                lambda: client.chat.completions.create(
+                                    model="gpt-3.5-turbo",
+                                    messages=[{"role": "user", "content": page_summary_prompt}],
+                                    max_tokens=100
+                                )
+                            )
+                            page_summary = page_summary_response.choices[0].message.content.strip()
+                            logs.append(f"페이지 {page_num + 1} 개별 요약 생성 완료 (사용자: {user_id})")
+                        except Exception as e:
+                            logs.append(f"페이지 {page_num + 1} 요약 생성 실패, 전체 요약 사용: {e}")
+                            page_summary = f"{global_metadata_dict['summary']} (페이지 {page_num + 1})"
+                    else:
+                        # 짧은 페이지는 전체 요약에 페이지 번호 추가
+                        page_summary = f"{global_metadata_dict['summary']} (페이지 {page_num + 1})"
+                    
+                    page_metadata_dict = {
+                        "title": page_title,
+                        "summary": page_summary,
+                        "response_style": global_metadata_dict["response_style"]  # 응답 스타일은 문서 전체 기준 사용
+                    }
+                    logs.append(f"페이지 {page_num + 1} 메타데이터 완료: 제목='{page_metadata_dict['title'][:30]}...', 요약='{page_metadata_dict['summary'][:50]}...' (사용자: {user_id})")
 
                     stmt_doc = insert(documents).values(
                         user_id=user_id,

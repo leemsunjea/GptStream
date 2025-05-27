@@ -189,6 +189,37 @@ async def search_similar_documents(message: str, user_id: str): # user_id 매개
     
     return referenced_docs_details # 상세 정보 반환
 
+async def search_recent_documents_first(query: str, user_id: str):
+    """최근 업로드된 문서를 우선적으로 검색하는 함수"""
+    print(f"[DEBUG] search_recent_documents_first: 최근 문서 우선 검색 시작 - 사용자: {user_id}, 쿼리: '{query}'")
+    
+    # 먼저 일반 검색 수행
+    all_results = await search_similar_documents(query, user_id)
+    if not all_results:
+        print(f"[DEBUG] search_recent_documents_first: 검색 결과 없음 - 사용자: {user_id}")
+        return []
+    
+    # 최근 업로드된 문서를 우선적으로 정렬
+    # doc_id가 높을수록 최근에 업로드된 것으로 가정
+    try:
+        # created_at이 있으면 시간순으로 정렬, 없으면 doc_id 순으로 정렬
+        sorted_results = sorted(all_results, key=lambda x: (
+            x.get('created_at') if x.get('created_at') else x.get('doc_id', 0)
+        ), reverse=True)
+        
+        print(f"[DEBUG] search_recent_documents_first: {len(sorted_results)}개 결과를 최신순으로 정렬 완료 - 사용자: {user_id}")
+        
+        # 최근 문서 우선 반환 (최대 5개)
+        recent_first_results = sorted_results[:5]
+        
+        print(f"[DEBUG] search_recent_documents_first: 최신 {len(recent_first_results)}개 문서 반환 - 사용자: {user_id}")
+        return recent_first_results
+        
+    except Exception as e:
+        print(f"[ERROR] search_recent_documents_first: 정렬 오류 - 사용자 {user_id}: {e}")
+        # 오류 발생시 원본 결과 반환
+        return all_results[:5]
+
 async def process_pdf(task_id: str, file_path: str, filename: str, session_factory, logs, user_id: str):
     # 초기화
     print(f"[DEBUG] process_pdf 시작 - Task ID: {task_id}, Filename: {filename}")

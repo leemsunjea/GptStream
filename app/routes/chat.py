@@ -8,7 +8,7 @@ import numpy as np
 from app.config import settings
 from db.models import ChatHistory, UserPreference # UserPreference 임포트 추가
 from db.database import async_session
-from app.vector_db import get_embedding_async as get_embedding, index, doc_store, search_similar_documents # search_similar_documents 추가
+from app.vector_db import get_embedding_async as get_embedding, index, doc_store, search_similar_documents, search_recent_documents_first # search_recent_documents_first 추가
 from openai import OpenAI
 from sqlalchemy import func, select, delete # delete 추가
 from db.models import UserPreference, ChatHistory # ChatHistory 임포트 추가
@@ -78,8 +78,26 @@ async def chat_stream(request: Request, x_user_id: str = Header(..., description
     referenced_docs_for_response_display = [] # 전체 문서 메타데이터를 담을 리스트
     recommended_response_style = ""
     
+    # "방금 업로드한 문서", "최근 업로드한", "업로드한 문서" 등의 키워드 감지
+    recent_doc_keywords = [
+        "방금 업로드", "최근 업로드", "업로드한 문서", "내가 올린", "방금 올린", "최근에 올린",
+        "방금 등록", "최근 등록", "등록한 문서", "방금 추가", "최근 추가", "추가한 문서",
+        "방금 저장", "최근 저장", "저장한 문서", "새로 올린", "새로 업로드", "새 문서",
+        "요약해", "정리해", "설명해", "알려줘", "뭐가 있어", "어떤 내용"
+    ]
+    is_recent_doc_query = any(keyword in message for keyword in recent_doc_keywords)
+    
     if index.ntotal > 0:
-        retrieved_documents_details = await search_similar_documents(message, x_user_id)
+        print(f"[DEBUG] FAISS 인덱스에 {index.ntotal}개 벡터 로드됨. 문서 검색 시작...")
+        
+        # 최근 문서 쿼리인 경우 특별 처리
+        if is_recent_doc_query:
+            print(f"[DEBUG] 최근 업로드 문서 관련 질문 감지: '{message}'")
+            # 최근 업로드된 문서를 우선적으로 검색
+            retrieved_documents_details = await search_recent_documents_first(message, x_user_id)
+        else:
+            retrieved_documents_details = await search_similar_documents(message, x_user_id)
+            
         if retrieved_documents_details:
             print(f"[DEBUG] 사용자 {x_user_id}에 대해 검색된 관련 문서 수: {len(retrieved_documents_details)}")
             
@@ -105,13 +123,18 @@ async def chat_stream(request: Request, x_user_id: str = Header(..., description
                     response_styles.append(response_style)
             
             context_text_for_prompt = "\n\n".join(context_parts)
+            print(f"[DEBUG] 생성된 컨텍스트 길이: {len(context_text_for_prompt)} 문자")
             
             # 가장 빈번한 응답 스타일 선택
             if response_styles:
                 recommended_response_style = max(set(response_styles), key=response_styles.count)
                 print(f"[DEBUG] 권장 응답 스타일: {recommended_response_style}")
             
-            referenced_docs_for_response_display = retrieved_documents_details 
+            referenced_docs_for_response_display = retrieved_documents_details
+        else:
+            print(f"[DEBUG] 사용자 {x_user_id}에 대해 검색된 관련 문서가 없습니다.")
+    else:
+        print(f"[DEBUG] FAISS 인덱스가 비어있습니다 (ntotal: {index.ntotal}). 문서 검색을 건너뜁니다.") 
 
     reference_document_section_content = ""
     if context_text_for_prompt:
