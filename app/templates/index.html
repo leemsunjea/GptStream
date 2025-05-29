@@ -71,6 +71,8 @@
       flex-direction: column;
       transition: all var(--transition-duration);
       position: relative;
+      padding: 10px;
+      /* 10px 패딩 추가 */
     }
 
     /* System Log Styles */
@@ -135,19 +137,7 @@
       color: var(--text-color);
     }
 
-    /* Body Styles */
-    .chat-body {
-      flex: 1;
-      padding: 20px;
-      overflow-y: auto;
-      display: flex;
-      flex-direction: column;
-      gap: 15px;
-      scrollbar-width: thin;
-      scrollbar-color: var(--scrollbar-color) transparent;
-      background-color: var(--background-color);
-      /* ChatGPT 배경색 */
-    }
+    /* Body Styles - 이미 위에서 정의됨 */
 
     .chat-body::-webkit-scrollbar {
       width: 8px;
@@ -241,21 +231,50 @@
 
     /* Input Section Styles */
     .chat-input {
-      position: fixed;
-      bottom: 20px;
-      left: 50%;
-      transform: translateX(-50%);
-      width: 90%;
-      max-width: 800px;
-      padding: 10px 15px;
-      background-color: rgba(60, 60, 60, 0.9);
-      border-radius: 12px;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-      backdrop-filter: blur(10px);
+      padding: 15px;
       border: 1px solid var(--border-color);
-      z-index: 1000;
+      border-radius: 12px;
+      /* 모서리 둥글게 */
+      background-color: var(--input-bg);
       transition: background-color var(--transition-duration);
       position: relative;
+      margin-bottom: 10px;
+      /* 헤더와 간격 */
+    }
+
+    .chat-input:hover {
+      background-color: var(--input-bg);
+    }
+
+    /* Header Styles */
+    .chat-header {
+      padding: 20px;
+      border-bottom: 1px solid var(--border-color);
+      border-radius: 12px 12px 0 0;
+      /* 상단만 둥글게 */
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      cursor: pointer;
+      background-color: var(--card-background);
+    }
+
+    /* Body Styles */
+    .chat-body {
+      flex: 1;
+      padding: 20px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 15px;
+      scrollbar-width: thin;
+      scrollbar-color: var(--scrollbar-color) transparent;
+      background-color: var(--background-color);
+      border-radius: 0 0 12px 12px;
+      /* 하단만 둥글게 */
+      /* border: 1px solid var(--border-color); */
+      border-top: none;
+      /* 헤더와 연결 */
     }
 
     .chat-input:hover {
@@ -266,16 +285,16 @@
       display: flex;
       gap: 8px;
       align-items: center;
-      background-color: rgba(68, 70, 84, 0.5);
+      background-color: #3C3C3C;
       border-radius: 12px;
-      padding: 4px 12px;
-      border: 1px solid rgba(255, 255, 255, 0.1);
-      box-shadow: 0 2px 4px var(--shadow-color);
+      padding: 1px 1px;
+      /* border: 1px solid rgba(255, 255, 255, 0.1); */
+      /* box-shadow: 0 2px 4px var(--shadow-color); */
       transition: all var(--transition-duration);
     }
 
     .input-wrapper:hover {
-      box-shadow: 0 4px 8px var(--shadow-color);
+      /* box-shadow: 0 1px 1px var(--shadow-color); */
     }
 
     .input-wrapper input {
@@ -351,33 +370,37 @@
     /* Floating Action Buttons - 채팅 입력창 아래 배치 */
     .floating-actions {
       display: flex;
-      gap: 12px;
+      gap: 8px;
       margin-top: 10px;
       justify-content: flex-start;
       width: 100%;
-      padding: 0 12px;
+      padding: 1 12px;
       box-sizing: border-box;
+      flex-wrap: wrap;
     }
 
     .floating-btn {
-      width: 40px;
-      height: 40px;
+      min-width: 70px;
+      height: 32px;
       border-radius: 6px;
       border: 1px solid rgba(255, 255, 255, 0.1);
       background: rgba(32, 33, 35, 0.8);
       color: rgba(255, 255, 255, 0.8);
-      font-size: 16px;
+      font-size: 11px;
       cursor: pointer;
       transition: all 0.2s ease;
       display: flex;
       align-items: center;
       justify-content: center;
       opacity: 0.9;
+      padding: 0 8px;
+      white-space: nowrap;
+      flex-shrink: 0;
     }
 
     .floating-btn:hover {
       transform: translateY(-1px);
-      background: rgba(86, 88, 105, 0.7);
+      /* background: rgba(86, 88, 105, 0.7); */
       opacity: 1;
     }
 
@@ -612,9 +635,9 @@
       </div>
       <!-- Floating Action Buttons - 채팅 입력창 아래 배치 -->
       <div class="floating-actions">
-        <button class="floating-btn primary" id="uploadPdfBtn-main">📄</button>
-        <button class="floating-btn danger" id="resetDataBtn-main">🗑️</button>
-        <button class="floating-btn warning" id="resetPromptBtn-main">⚙️</button>
+        <button class="floating-btn primary" id="uploadPdfBtn-main">PDF 업로드</button>
+        <button class="floating-btn danger" id="resetDataBtn-main">문서초기화</button>
+        <!-- <button class="floating-btn warning" id="resetPromptBtn-main">프롬프트초기화</button> -->
       </div>
     </div>
   </div>
