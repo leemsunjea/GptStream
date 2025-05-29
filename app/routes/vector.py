@@ -12,6 +12,7 @@ import fitz # fitz (PyMuPDF) 추가
 from openai import OpenAI # OpenAI 클라이언트 추가
 from app.config import settings # 설정값 로드
 import asyncio # asyncio 임포트 추가
+import numpy as np # numpy 추가
 from app.vector_db import task_statuses
 
 router = APIRouter()
@@ -23,8 +24,30 @@ client = OpenAI(api_key=settings.OPENAI_API_KEY) # OpenAI 클라이언트 초기
 async def generate_metadata(text_content: str, filename: str):
     """문서 내용과 파일명을 기반으로 메타데이터를 생성합니다."""
     try:
-        # 제목 생성 (첫 번째 줄 또는 파일명 활용) - 잘못된 이스케이프 문자 수정
-        title = text_content.split('\n')[0][:100] if text_content else filename
+        # 제목 생성 - AI를 활용하여 더 의미있는 제목 추출
+        title_prompt = f"""다음 문서의 내용을 읽고 가장 적절한 제목을 한 줄로 추천해주세요. 
+파일명: {filename}
+
+문서 내용 (앞부분):
+{text_content[:1000]}
+
+제목은 20-50자 정도로 간결하고 의미있게 작성해주세요. 단순히 첫 번째 줄을 복사하지 말고, 문서의 핵심 주제를 나타내는 제목을 만들어주세요.
+
+제목:"""
+        
+        title_response = await asyncio.get_event_loop().run_in_executor(
+            None,
+            lambda: client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[{"role": "user", "content": title_prompt}],
+                max_tokens=100
+            )
+        )
+        title = title_response.choices[0].message.content.strip()
+        
+        # 제목이 너무 길거나 비어있으면 파일명 사용
+        if len(title) > 100 or len(title) < 5:
+            title = filename
 
         # 목차 정보 확인
         toc_keywords = ["목차", "차례", "table of contents", "contents", "index"]
@@ -140,9 +163,28 @@ async def process_pdf(task_id: str, file_path: str, filename: str, session_facto
                         logs.append(f"페이지 {page_num + 1} 내용이 비어있어 건너뜁니다 (사용자: {user_id}).")
                         continue
 
-                    # 페이지별 고유 메타데이터 생성
-                    page_title_raw = page_content.split('\n')[0][:100] if page_content.strip() else ""
-                    page_title = page_title_raw if page_title_raw.strip() else f"{global_metadata_dict['title']} - 페이지 {page_num + 1}"
+                    # 페이지별 고유 메타데이터 생성 - 더 의미있는 제목 추출
+                    page_lines = [line.strip() for line in page_content.split('\n') if line.strip()]
+                    page_title_raw = ""
+                    
+                    # 첫 번째 줄부터 의미있는 제목 찾기
+                    for line in page_lines[:5]:  # 첫 5줄 확인
+                        if len(line) >= 5 and len(line) <= 100:  # 적절한 길이의 제목
+                            # 목차, 페이지 번호 등이 아닌 실제 내용 제목 찾기
+                            if not any(skip_word in line.lower() for skip_word in ['목차', 'contents', '페이지', 'page', '...']):
+                                page_title_raw = line
+                                break
+                    
+                    # 적절한 제목이 없으면 첫 문장의 일부 사용
+                    if not page_title_raw:
+                        sentences = page_content.replace('\n', ' ').split('.')
+                        for sentence in sentences[:3]:
+                            if len(sentence.strip()) >= 10 and len(sentence.strip()) <= 80:
+                                page_title_raw = sentence.strip()
+                                break
+                    
+                    # 그래도 없으면 기본 제목 사용
+                    page_title = page_title_raw if page_title_raw else f"{global_metadata_dict['title']} - 페이지 {page_num + 1}"
                     
                     # 페이지 내용이 충분한 경우 페이지별 요약 생성
                     if len(page_content.strip()) > 300:  # 최소 300자 이상일 때만 개별 요약 생성
@@ -349,6 +391,30 @@ async def reset_user_data(x_user_id: str = Header(..., description="클라이언
                 print(f"[INFO] FAISS 인덱스 및 문서 저장소 재로드 완료.")
                 
                 await session.commit() # 명시적 커밋
+                logs.append(f"사용자 [{x_user_id}] 데이터 초기화가 성공적으로 완료되었습니다.")
+                
+                # 데이터 초기화 후 현재 상태 확인 및 출력
+                try:
+                    user_docs_after = await get_user_documents_list(x_user_id)
+                    if user_docs_after:
+                        logs.append(f"========== 데이터 초기화 후 남은 문서 목록 ==========")
+                        for i, doc in enumerate(user_docs_after, 1):
+                            logs.append(f"{i}. {doc['pdf_name']} ({doc['page_count']}페이지)")
+                            logs.append(f"   업로드 일시: {doc['last_upload']}")
+                            logs.append(f"   주요 제목: {doc['sample_titles']}")
+                            logs.append("   " + "-" * 50)
+                        logs.append(f"총 {len(user_docs_after)}개의 PDF 문서가 남아있습니다.")
+                        logs.append("=" * 60)
+                    else:
+                        logs.append(f"========== 데이터 초기화 완료 ==========")
+                        logs.append(f"사용자 [{x_user_id}]의 모든 문서가 성공적으로 삭제되었습니다.")
+                        logs.append(f"현재 업로드된 PDF 문서: 0개")
+                        logs.append("=" * 60)
+                except Exception as e:
+                    logs.append(f"초기화 후 문서 목록 조회 중 오류 발생: {e}")
+                    
+                print(f"[INFO] 사용자 {x_user_id} 데이터 초기화 완료.")
+                
                 return JSONResponse({
                     "success": True, 
                     "message": f"사용자 [{x_user_id}]의 데이터가 성공적으로 초기화되었습니다.",
@@ -389,15 +455,59 @@ async def get_user_documents_list(user_id: str):
             
             formatted_list = []
             for pdf_name, page_count, last_upload, titles in documents_list:
-                # 제목들을 정리 (중복 제거 및 길이 제한)
-                unique_titles = list(set([title for title in titles if title]))[:3]  # 최대 3개까지
-                titles_str = ", ".join([title[:30] + "..." if len(title) > 30 else title for title in unique_titles])
+                # 제목들을 정리 (None과 빈 문자열 제거, 중복 제거)
+                valid_titles = []
+                if titles:
+                    for title in titles:
+                        if title and title.strip() and title.strip() not in ['None', '']:
+                            # 너무 긴 제목은 앞부분만 사용하고, 의미있는 내용 추출
+                            cleaned_title = title.strip()
+                            
+                            # 페이지 번호나 불필요한 정보 제거
+                            if ' - 페이지 ' in cleaned_title:
+                                cleaned_title = cleaned_title.split(' - 페이지 ')[0]
+                            
+                            # 너무 짧거나 긴 제목 필터링
+                            if 5 <= len(cleaned_title) <= 100:
+                                # 첫 번째 문장만 사용 (마침표 기준)
+                                sentences = cleaned_title.split('.')
+                                if len(sentences) > 1 and len(sentences[0]) >= 5:
+                                    cleaned_title = sentences[0].strip()
+                                elif len(cleaned_title) > 50:
+                                    # 50자 이후 첫 번째 공백에서 자르기
+                                    space_index = cleaned_title.find(' ', 50)
+                                    if space_index > 0:
+                                        cleaned_title = cleaned_title[:space_index]
+                                    else:
+                                        cleaned_title = cleaned_title[:50]
+                                
+                                valid_titles.append(cleaned_title)
+                
+                # 중복 제거 및 최대 3개까지만
+                unique_titles = []
+                seen = set()
+                for title in valid_titles:
+                    if title.lower() not in seen:
+                        unique_titles.append(title)
+                        seen.add(title.lower())
+                        if len(unique_titles) >= 3:
+                            break
+                
+                if unique_titles:
+                    titles_str = ", ".join(unique_titles)
+                else:
+                    # 제목이 없으면 PDF 파일명에서 추출 시도
+                    base_name = pdf_name.replace('.pdf', '').replace('_', ' ').replace('-', ' ')
+                    # 파일명 정리
+                    if len(base_name) > 30:
+                        base_name = base_name[:30] + "..."
+                    titles_str = base_name if base_name else '제목 없음'
                 
                 formatted_list.append({
                     'pdf_name': pdf_name,
                     'page_count': page_count,
                     'last_upload': last_upload.strftime('%Y-%m-%d %H:%M:%S') if last_upload else 'Unknown',
-                    'sample_titles': titles_str if titles_str else '제목 없음'
+                    'sample_titles': titles_str
                 })
             
             return formatted_list

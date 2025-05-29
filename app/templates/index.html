@@ -24,20 +24,23 @@
 
     body {
       min-height: 100vh;
+      height: 100vh;
       background-color: var(--background-color);
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-      margin: 20px;
+      margin: 0;
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(430px, 1fr));
-      gap: 30px;
-      padding: 20px;
+      grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+      gap: 20px;
+      padding: 15px;
+      box-sizing: border-box;
+      overflow: hidden;
     }
 
     /* Chat Container Styles */
     .chat-container {
       width: 100%;
-      max-width: 430px;
-      height: 705px;
+      max-width: 100%;
+      height: calc(100vh - 30px);
       background-color: var(--card-background);
       border-radius: 20px;
       box-shadow: 0 8px 24px var(--shadow-color);
@@ -249,8 +252,8 @@
     /* System Log Styles */
     .system-log {
       width: 100%;
-      max-width: 430px;
-      height: 705px;
+      max-width: 100%;
+      height: calc(100vh - 30px);
       background-color: var(--card-background);
       border-radius: 20px;
       box-shadow: 0 8px 24px var(--shadow-color);
@@ -296,18 +299,24 @@
 
     body {
       min-height: 100vh;
+      height: 100vh;
       display: flex;
       align-items: center;
       justify-content: center;
-      gap: 60px;
+      gap: 20px;
       background: #f8f9fa;
+      margin: 0;
+      padding: 15px;
+      box-sizing: border-box;
+      overflow: hidden;
     }
 
     #chat-popup-alt {
       position: static;
       margin: 0;
-      width: 430px;
-      height: 705px;
+      width: 100%;
+      max-width: 100%;
+      height: calc(100vh - 30px);
       background-color: #fff;
       border-radius: 30px;
       box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3);
@@ -369,7 +378,24 @@
 </head>
 
 <body>
-  <div class="chat-container" id="chat-container-main">
+  <div class="chat-container" id="chat-container-alt">
+    <div class="chat-header">
+      <svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="12" cy="12" r="10" />
+      </svg>
+      <small>챗봇 프롬프트를 추가해보세요!</small>
+    </div>
+    <div class="chat-body" id="chat-body-alt">
+    </div>
+    <div class="chat-input">
+      <div class="input-wrapper">
+        <input type="text" id="chat-input-field-alt" placeholder="메시지를 입력해주세요.">
+        <button class="send-icon" id="sendButton-alt">→</button>
+      </div>
+    </div>
+  </div>
+
+    <div class="chat-container" id="chat-container-main">
     <div class="chat-header">
       <svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
         <circle cx="12" cy="12" r="10" />
@@ -389,23 +415,6 @@
       <div class="input-wrapper">
         <input type="text" id="chat-input-field-main" placeholder="메시지를 입력해주세요.">
         <button class="send-icon" id="sendButton-main">→</button>
-      </div>
-    </div>
-  </div>
-
-  <div class="chat-container" id="chat-container-alt">
-    <div class="chat-header">
-      <svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-        <circle cx="12" cy="12" r="10" />
-      </svg>
-      <small>챗봇 프롬프트를 추가해보세요!</small>
-    </div>
-    <div class="chat-body" id="chat-body-alt">
-    </div>
-    <div class="chat-input">
-      <div class="input-wrapper">
-        <input type="text" id="chat-input-field-alt" placeholder="메시지를 입력해주세요.">
-        <button class="send-icon" id="sendButton-alt">→</button>
       </div>
     </div>
   </div>
@@ -634,6 +643,9 @@
 
             if (result.status === "completed") {
               appendMessage("bot", `PDF 처리 완료: ${result.page_count || 0} 페이지 (Task ID: ${task_id})`);
+              appendSystemLog("========================================");
+              appendSystemLog("PDF 업로드 및 처리가 완료되었습니다!");
+              appendSystemLog("========================================");
               clearInterval(interval);
               delete lastProcessedLogCounts[task_id]; // 완료 시 해당 태스크 ID 정리
             } else if (result.status === "failed") {
@@ -689,9 +701,19 @@
           if (response.ok && result.success) {
             appendMessage("bot", "사용자 데이터가 성공적으로 초기화되었습니다.");
             appendSystemLog(`사용자 [${userId}] 데이터 초기화 완료: ${result.message}`);
+            
+            // 초기화 로그들을 시스템 로그에 출력
+            if (result.logs && Array.isArray(result.logs)) {
+              result.logs.forEach(msg => appendSystemLog(msg));
+            }
           } else {
             appendMessage("bot", `데이터 초기화 실패: ${result.detail || "서버 오류"}`);
             appendSystemLog(`사용자 [${userId}] 데이터 초기화 실패: ${result.detail}`);
+            
+            // 실패 로그들도 시스템 로그에 출력
+            if (result.logs && Array.isArray(result.logs)) {
+              result.logs.forEach(msg => appendSystemLog(msg));
+            }
           }
         } catch (error) {
           console.error("데이터 초기화 오류:", error);
