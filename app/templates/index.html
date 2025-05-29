@@ -678,39 +678,88 @@
 
       // 간단한 마크다운 파서 함수
       function parseMarkdown(text) {
-        return text
-          // 볼드 텍스트: **text** -> <strong>text</strong>
-          .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-          // 이탤릭 텍스트: *text* -> <em>text</em>
-          .replace(/\*(.*?)\*/g, '<em>$1</em>')
-          // 코드 블록: ```code``` -> <pre><code>code</code></pre>
-          .replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>')
-          // 인라인 코드: `code` -> <code>code</code>
-          .replace(/`(.*?)`/g, '<code>$1</code>')
-          // 번호 목록: 1. text -> <ol><li>text</li></ol>
-          .replace(/^(\d+\.)\s+(.+)$/gm, '<li>$2</li>')
-          .replace(/(<li>.*<\/li>)/gs, '<ol>$1</ol>')
-          // 순서 없는 목록: - text 또는 * text -> <ul><li>text</li></ul>
-          .replace(/^[-*]\s+(.+)$/gm, '<li>$1</li>')
-          .replace(/(<li>.*<\/li>)/gs, function(match) {
-            if (match.includes('<ol>')) return match;
-            return '<ul>' + match + '</ul>';
-          })
-          // 제목: # text -> <h1>text</h1>
-          .replace(/^### (.*$)/gm, '<h3>$1</h3>')
-          .replace(/^## (.*$)/gm, '<h2>$1</h2>')
-          .replace(/^# (.*$)/gm, '<h1>$1</h1>')
-          // 줄바꿈 처리
-          .replace(/\n\n/g, '</p><p>')
-          .replace(/\n/g, '<br>')
-          // 문단 감싸기
-          .replace(/^(?!<[h|u|o|p|c|l])(.+)/gm, '<p>$1</p>')
-          // 중복 태그 정리
-          .replace(/<\/ol>\s*<ol>/g, '')
-          .replace(/<\/ul>\s*<ul>/g, '')
-          .replace(/<p><\/p>/g, '')
-          .replace(/<p>(<[h|u|o|l])/g, '$1')
-          .replace(/(<\/[h|u|o|l][^>]*>)<\/p>/g, '$1');
+        let html = text;
+        
+        // 1. 코드 블록 처리 (먼저 처리하여 다른 규칙과 충돌 방지)
+        html = html.replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>');
+        html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+        
+        // 2. 볼드 및 이탤릭 처리
+        html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+        html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+        
+        // 3. 제목 처리
+        html = html.replace(/^### (.*$)/gm, '<h3>$1</h3>');
+        html = html.replace(/^## (.*$)/gm, '<h2>$1</h2>');
+        html = html.replace(/^# (.*$)/gm, '<h1>$1</h1>');
+        
+        // 4. 목록 처리 - 줄 단위로 분리해서 처리
+        const lines = html.split('\n');
+        let result = [];
+        let inOrderedList = false;
+        let inUnorderedList = false;
+        
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i].trim();
+          
+          // 번호 목록 확인 (1. 2. 3. 등)
+          const orderedMatch = line.match(/^(\d+\.)\s+(.+)$/);
+          if (orderedMatch) {
+            if (!inOrderedList) {
+              if (inUnorderedList) {
+                result.push('</ul>');
+                inUnorderedList = false;
+              }
+              result.push('<ol>');
+              inOrderedList = true;
+            }
+            result.push(`<li>${orderedMatch[2]}</li>`);
+            continue;
+          }
+          
+          // 순서 없는 목록 확인 (- 또는 *)
+          const unorderedMatch = line.match(/^[-*]\s+(.+)$/);
+          if (unorderedMatch) {
+            if (!inUnorderedList) {
+              if (inOrderedList) {
+                result.push('</ol>');
+                inOrderedList = false;
+              }
+              result.push('<ul>');
+              inUnorderedList = true;
+            }
+            result.push(`<li>${unorderedMatch[1]}</li>`);
+            continue;
+          }
+          
+          // 목록이 아닌 줄이면 목록 종료
+          if (inOrderedList) {
+            result.push('</ol>');
+            inOrderedList = false;
+          }
+          if (inUnorderedList) {
+            result.push('</ul>');
+            inUnorderedList = false;
+          }
+          
+          // 일반 줄 처리
+          if (line) {
+            result.push(line);
+          } else {
+            result.push('');
+          }
+        }
+        
+        // 마지막에 열린 목록 태그 닫기
+        if (inOrderedList) result.push('</ol>');
+        if (inUnorderedList) result.push('</ul>');
+        
+        // 5. 줄바꿈 처리
+        html = result.join('\n');
+        html = html.replace(/\n\n/g, '<br><br>');
+        html = html.replace(/\n/g, '<br>');
+        
+        return html;
       }
 
       // 메시지 추가 함수
