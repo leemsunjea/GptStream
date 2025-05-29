@@ -234,25 +234,9 @@ async def chat_stream(request: Request, x_user_id: str = Header(..., description
                     full_response_content += content_piece
                     buffer += content_piece
                     
-                    # 마크다운 포맷 보호를 위한 전송 조건
                     should_flush = (
                         len(buffer) >= buffer_size_limit or
-                        # 문장 단위 구분 (마크다운 안전)
-                        buffer.endswith('. ') or 
-                        buffer.endswith('.\n') or 
-                        buffer.endswith('! ') or 
-                        buffer.endswith('?\n') or
-                        # 자연스러운 줄바꿈 지점
-                        buffer.endswith('\n\n') or
-                        # 리스트나 제목 등 마크다운 구조 완성
-                        (buffer.count('\n') > 0 and (
-                            buffer.strip().endswith(':') or  # 제목이나 리스트 시작
-                            buffer.strip().startswith('#') or  # 헤딩 
-                            buffer.strip().startswith('- ') or  # 리스트 항목
-                            buffer.strip().startswith('* ') or  # 리스트 항목
-                            buffer.strip().startswith('1. ') or  # 번호 리스트
-                            buffer.strip().endswith('.')  # 문장 완성
-                        ))
+                        '\n' in buffer  # 줄바꿈이 포함되면 즉시 전송
                     )
                     
                     if should_flush and buffer.strip():

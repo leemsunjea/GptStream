@@ -293,9 +293,9 @@
       transition: all var(--transition-duration);
     }
 
-    .input-wrapper:hover {
-      /* box-shadow: 0 1px 1px var(--shadow-color); */
-    }
+    /* .input-wrapper:hover {
+      box-shadow: 0 1px 1px var(--shadow-color);
+    } */
 
     .input-wrapper input {
       flex: 1;
@@ -727,95 +727,9 @@
       // 간단한 마크다운 파서 함수
       function parseMarkdown(text) {
         let html = text;
-        
-        // 0. 줄바꿈 문자 정규화 (먼저 처리)
-        html = html.replace(/\\n\\n/g, '\n\n');  // \\n\\n을 \n\n으로
-        html = html.replace(/\\n/g, '\n');       // \\n을 \n으로
-        
-        // 1. 코드 블록 처리 (먼저 처리하여 다른 규칙과 충돌 방지)
-        html = html.replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>');
-        html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
-        
-        // 2. 볼드 및 이탤릭 처리
-        html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-        html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
-        
-        // 3. 제목 처리
-        html = html.replace(/^### ?(.*$)/gm, '<h3>$1</h3>');
-        html = html.replace(/^## ?(.*$)/gm, '<h2>$1</h2>');
-        html = html.replace(/^# ?(.*$)/gm, '<h1>$1</h1>'); // 공백 선택적
-        
-        // 4. 목록 처리 - 줄 단위로 분리해서 처리
-        const lines = html.split('\n');
-        let result = [];
-        let inOrderedList = false;
-        let inUnorderedList = false;
-        
-        for (let i = 0; i < lines.length; i++) {
-          const line = lines[i].trim();
-          
-          // 번호 목록 확인 (1. 2. 3. 등)
-          const orderedMatch = line.match(/^(\d+\.)\s+(.+)$/);
-          if (orderedMatch) {
-            if (!inOrderedList) {
-              if (inUnorderedList) {
-                result.push('</ul>');
-                inUnorderedList = false;
-              }
-              result.push('<ol>');
-              inOrderedList = true;
-            }
-            result.push(`<li>${orderedMatch[2]}</li>`);
-            continue;
-          }
-          
-          // 순서 없는 목록 확인 (- 또는 *)
-          const unorderedMatch = line.match(/^[-*]\s+(.+)$/);
-          if (unorderedMatch) {
-            if (!inUnorderedList) {
-              if (inOrderedList) {
-                result.push('</ol>');
-                inOrderedList = false;
-              }
-              result.push('<ul>');
-              inUnorderedList = true;
-            }
-            result.push(`<li>${unorderedMatch[1]}</li>`);
-            continue;
-          }
-          
-          // 목록이 아닌 줄이면 목록 종료
-          if (inOrderedList) {
-            result.push('</ol>');
-            inOrderedList = false;
-          }
-          if (inUnorderedList) {
-            result.push('</ul>');
-            inUnorderedList = false;
-          }
-          
-          // 일반 줄 처리
-          if (line) {
-            result.push(line);
-          } else {
-            result.push('');
-          }
-        }
-        
-        // 마지막에 열린 목록 태그 닫기
-        if (inOrderedList) result.push('</ol>');
-        if (inUnorderedList) result.push('</ul>');
-        
-        // 5. 줄바꿈 처리
-        html = result.join('\n');
-        
-        // 두 개 이상의 연속 줄바꿈은 단락 구분
-        html = html.replace(/\n\n+/g, '<br><br>');
-        
-        // 일반 줄바꿈은 <br>로 변환
-        html = html.replace(/\n/g, '<br>');
-        
-        return html;
+        html = html.replace(/\n\n+/g, '</p><p>');  // 단락 구분
+        html = html.replace(/\n/g, '<br>');        // 줄바꿈
+        return '<p>' + html + '</p>';
       }
 
       // 메시지 추가 함수
@@ -895,6 +809,7 @@
                   }
                   // 마크다운을 HTML로 변환해서 출력
                   lastBotDiv.innerHTML = parseMarkdown(partial);
+                  console.log("수신 데이터:", partial);
                 }
                 chatBox.scrollTop = chatBox.scrollHeight;
               }
