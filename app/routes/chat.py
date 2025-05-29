@@ -36,7 +36,7 @@ BASE_SYSTEM_PROMPT_TEMPLATE = """
 
 답변할 때 다음 규칙을 **절대** 무시하지 마세요:
 
-1. **문장이 끝나면**: 반드시 '\n'을 붙이세요
+1. **줄바꿈이 필요할때 혹은 문장이 끝났을 때**: 반드시 '\n'을 붙이세요
 2. **단락을 나눌 때**: '\n\n'을 사용하세요  
 3. **목록 항목 끝**: '\n'을 붙이세요
 4. **제목 뒤**: '\n\n'을 붙이세요
@@ -46,7 +46,7 @@ BASE_SYSTEM_PROMPT_TEMPLATE = """
 올바른 예: "안녕하세요.'\n'도움을 드리겠습니다.'\n\n'감사합니다.'\n'"
 
 **반드시 이 형식으로 답변하세요:**
-- 모든 문장 끝에 '\n' 추가
+- 줄바꿈이 필요할때 혹은 문장이 끝났을 때 '\n' 추가
 - 새 단락 시작할 때 '\n\n' 사용
 - 절대 줄바꿈 없이 긴 텍스트 연속 작성 금지
 
@@ -205,7 +205,7 @@ async def chat_stream(request: Request, x_user_id: str = Header(..., description
         
         try:
             openai_response_stream = client.chat.completions.create(
-                model="gpt-3.5-turbo",
+                model="text-davinci-003",
                 messages=messages_to_send_to_openai,
                 stream=True
             )
