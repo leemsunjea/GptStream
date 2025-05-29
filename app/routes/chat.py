@@ -313,7 +313,7 @@ async def chat_stream(request: Request, x_user_id: str = Header(..., description
             print(f"[DEBUG] OpenAI API 호출 시작 - 모델: gpt-3.5-turbo")
             openai_response_stream = client.chat.completions.create(
                 model="gpt-3.5-turbo",
-                messages=messages_to_send_to_openai,
+                messages=messages_to_send_to_openai+'=== 필수 응답 형식 규칙 ===\\n\\n**중요: 다음 줄바꿈 규칙을 반드시 준수하세요**\\n\\n1. 문장이 끝날 때마다 \\\\n을 추가하세요\\n2. 새로운 단락 시작 시 \\\\n\\\\n을 사용하세요\\n3. 목록 항목 끝에 \\\\n을 추가하세요\\n4. 제목/헤더 뒤에 \\\\n\\\\n을 추가하세요\\n5. 긴 텍스트를 줄바꿈 없이 연속 작성하지 마세요\\n\\n**올바른 예시:**\\n\"안녕하세요.\\\\n도움이 필요하시군요.\\\\n\\\\n저는 AI 어시스턴트입니다.\\\\n무엇을 도와드릴까요?\"\\n\\n**잘못된 예시:**\\n\"안녕하세요. 도움이 필요하시군요. 저는 AI 어시스턴트입니다. 무엇을 도와드릴까요?\"\\n\\n이 규칙을 지키지 않으면 텍스트가 읽기 어려운 형태로 표시됩니다.',
                 stream=True,
                 temperature=0.7
             )
