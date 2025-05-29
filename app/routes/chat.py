@@ -12,6 +12,9 @@ from openai import OpenAI
 from sqlalchemy import func, select, delete # delete 추가
 from db.models import UserPreference, ChatHistory # ChatHistory 임포트 추가
 import traceback
+from sqlalchemy import func, select, delete # delete 추가
+from db.models import UserPreference, ChatHistory # ChatHistory 임포트 추가
+import traceback
 
 from app.vector_db import task_statuses
 
@@ -180,7 +183,7 @@ async def chat_stream(request: Request, x_user_id: str = Header(..., description
     async def event_stream():
         full_response_content = ""
         buffer = ""  # 토큰 버퍼
-        buffer_size_limit = 50  # 버퍼 크기 제한
+        buffer_size_limit = 40  # 적정 버퍼 크기로 조정
         
         try:
             openai_response_stream = client.chat.completions.create(
@@ -195,28 +198,37 @@ async def chat_stream(request: Request, x_user_id: str = Header(..., description
                     full_response_content += content_piece
                     buffer += content_piece
                     
-                    # 버퍼가 일정 크기에 도달하거나 문장 끝 구분자가 있을 때 전송
+                    # 마크다운 포맷 보호를 위한 전송 조건
                     should_flush = (
                         len(buffer) >= buffer_size_limit or
-                        any(delimiter in buffer for delimiter in ['. ', '! ', '? ', '\n', '.\n', '!\n', '?\n']) or
-                        buffer.endswith('.') or buffer.endswith('!') or buffer.endswith('?') or
-                        '```' in buffer or  # 코드 블록 시작/끝
-                        buffer.count('**') % 2 == 0 and '**' in buffer or  # 볼드 텍스트 완성
-                        buffer.count('*') % 2 == 0 and '*' in buffer and '**' not in buffer  # 이탤릭 텍스트 완성
+                        # 문장 단위 구분 (마크다운 안전)
+                        buffer.endswith('. ') or 
+                        buffer.endswith('.\n') or 
+                        buffer.endswith('! ') or 
+                        buffer.endswith('?\n') or
+                        # 자연스러운 줄바꿈 지점
+                        buffer.endswith('\n\n') or
+                        # 리스트나 제목 등 마크다운 구조 완성
+                        (buffer.count('\n') > 0 and (
+                            buffer.strip().endswith(':') or  # 제목이나 리스트 시작
+                            buffer.strip().startswith('#') or  # 헤딩 
+                            buffer.strip().startswith('- ') or  # 리스트 항목
+                            buffer.strip().startswith('* ') or  # 리스트 항목
+                            buffer.strip().startswith('1. ') or  # 번호 리스트
+                            buffer.strip().endswith('.')  # 문장 완성
+                        ))
                     )
                     
                     if should_flush and buffer.strip():
-                        # 가벼운 줄바꿈 처리만 수행 (Markdown은 클라이언트에서 처리)
-                        formatted_content = buffer.replace('\n', '<br>')
-                        yield f"data: {formatted_content}\n"
+                        # 원본 텍스트 그대로 전송 (클라이언트에서 마크다운 처리)
+                        yield f"data: {buffer}\n"
                         yield "\n"  # SSE 메시지 구분
                         buffer = ""  # 버퍼 초기화
-                        await asyncio.sleep(0.01)  # 아주 짧은 지연으로 실시간성 유지
+                        await asyncio.sleep(0.02)  # 적절한 지연으로 자연스러운 스트리밍
             
             # 스트림 종료 후 남은 버퍼 전송
             if buffer.strip():
-                formatted_content = buffer.replace('\n', '<br>')
-                yield f"data: {formatted_content}\n"
+                yield f"data: {buffer}\n"
                 yield "\n"
             
             # 스트림 완료 신호
@@ -236,7 +248,6 @@ async def chat_stream(request: Request, x_user_id: str = Header(..., description
 
         except Exception as e:
             print(f"[ERROR] 스트리밍 중 오류 발생: {str(e)}")
-            print(f"[ERROR] 상세 오류: {traceback.format_exc()}")
             yield f"data: [ERROR] {str(e)}\n"
             yield "\n"
 

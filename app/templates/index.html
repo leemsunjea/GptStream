@@ -5,15 +5,29 @@
   <meta charset="UTF-8">
   <title>스트리밍 챗봇</title>
   <style>
-    /* Global Styles */
+    /* Global Styles - ChatGPT Style Colors */
     :root {
-      --primary-color: #007bff;
-      --secondary-color: #6c757d;
-      --background-color: #f8f9fa;
-      --card-background: #ffffff;
-      --border-color: #dee2e6;
-      --shadow-color: rgba(0, 0, 0, 0.1);
+      --primary-color: #FFFFFF;
+      --secondary-color: #9ca3af;
+      --background-color: #323232;
+      /* 전체 배경색 */
+      --card-background: #323232;
+      /* 어시스턴트 응답 메시지 배경 */
+      --user-message-bg: #444654;
+      /* 사용자 메시지 박스 배경 */
+      --input-bg: #3C3C3C;
+      /* 입력창 배경 */
+      --code-bg: #2D2E39;
+      /* 코드 블럭 배경 */
+      --border-color: #374151;
+      --shadow-color: rgba(0, 0, 0, 0.3);
       --transition-duration: 0.3s;
+      --text-color: #ECECF1;
+      /* 일반 텍스트 */
+      --text-color-bright: #FFFFFF;
+      /* 코드 블럭 내 텍스트 색상 */
+      --scrollbar-color: #555;
+      /* 스크롤바 */
     }
 
     * {
@@ -28,25 +42,46 @@
       background-color: var(--background-color);
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
       margin: 0;
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
-      gap: 20px;
-      padding: 15px;
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      gap: 10px;
+      /* 간격 줄임 */
+      padding: 10px;
+      /* 패딩 줄임 */
       box-sizing: border-box;
-      overflow: hidden;
+      overflow-y: auto;
+      color: var(--text-color);
     }
 
     /* Chat Container Styles */
     .chat-container {
       width: 100%;
-      max-width: 100%;
-      height: calc(100vh - 30px);
-      background-color: var(--card-background);
+      max-width: 48%;
+      /* 화면을 더 채우도록 증가 */
+      height: calc(100vh - 20px);
+      /* 화면을 더 채우도록 높이 증가 */
+      background-color: var(--background-color);
       border-radius: 20px;
       box-shadow: 0 8px 24px var(--shadow-color);
       overflow: hidden;
       display: flex;
       flex-direction: column;
+      transition: all var(--transition-duration);
+      position: relative;
+    }
+
+    /* System Log도 같은 크기로 조정 */
+    .system-log {
+      width: 100%;
+      max-width: 48%;
+      /* 화면을 더 채우도록 증가 */
+      height: calc(100vh - 20px);
+      /* 화면을 더 채우도록 높이 증가 */
+      background-color: var(--card-background);
+      border-radius: 20px;
+      box-shadow: 0 8px 24px var(--shadow-color);
+      overflow: hidden;
       transition: all var(--transition-duration);
     }
 
@@ -58,6 +93,7 @@
       align-items: center;
       gap: 10px;
       cursor: pointer;
+      background-color: var(--card-background);
     }
 
     .chat-header svg {
@@ -90,7 +126,9 @@
       flex-direction: column;
       gap: 15px;
       scrollbar-width: thin;
-      scrollbar-color: var(--border-color) transparent;
+      scrollbar-color: var(--scrollbar-color) transparent;
+      background-color: var(--background-color);
+      /* ChatGPT 배경색 */
     }
 
     .chat-body::-webkit-scrollbar {
@@ -101,28 +139,13 @@
       background: transparent;
     }
 
-    /* Input field text color */
-    #chat-input-field,
-    #chat-input-field-alt {
-      color: #000000 !important;
-      /* 검정색 텍스트 */
-    }
-
-    /* Placeholder text color */
-    #chat-input-field::placeholder,
-    #chat-input-field-alt::placeholder {
-      color: #666666 !important;
-      /* 어두운 회색 플레이스홀더 */
-    }
-
     .chat-body::-webkit-scrollbar-thumb {
-      background-color: var(--border-color);
+      background-color: var(--scrollbar-color);
       border-radius: 4px;
     }
 
     /* Message Styles */
     .message {
-      max-width: 85%;
       padding: 12px 16px;
       border-radius: 12px;
       font-size: 14px;
@@ -131,18 +154,42 @@
       transition: all var(--transition-duration);
     }
 
+    /* GPT 응답 메시지: ChatGPT 스타일 */
     .message.bot {
-      background-color: #f8f9fa;
-      align-self: flex-start;
-      border-bottom-left-radius: 4px;
+      background-color: var(--card-background);
+      /* 어시스턴트 응답 메시지 배경 */
+      align-self: stretch;
+      width: 100%;
+      max-width: 100%;
+      color: var(--text-color);
+      /* 일반 텍스트 색상 */
+      border-radius: 0;
+      padding: 16px 0;
       white-space: pre-line;
-      /* 추가된 부분: \n 문자를 기준으로 자동 줄바꿈 */
+      /* 페이드인 애니메이션 추가 */
+      animation: fadeIn 0.8s ease-in-out forwards;
+      opacity: 0;
+    }
+
+    /* 페이드인 애니메이션 정의 */
+    @keyframes fadeIn {
+      from {
+        opacity: 0;
+        transform: translateY(10px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
     }
 
     .message.user {
-      background-color: var(--primary-color);
-      color: white;
+      background-color: var(--user-message-bg);
+      /* 사용자 메시지 박스 배경 */
+      color: var(--text-color);
       align-self: flex-end;
+      max-width: 85%;
       border-bottom-right-radius: 4px;
     }
 
@@ -150,19 +197,22 @@
     .chat-input {
       padding: 15px;
       border-top: 1px solid var(--border-color);
-      background-color: #f8f9fa;
+      background-color: var(--input-bg);
+      /* 입력창 배경 */
       transition: background-color var(--transition-duration);
+      position: relative;
     }
 
     .chat-input:hover {
-      background-color: #f5f5f5;
+      background-color: var(--input-bg);
     }
 
     .input-wrapper {
       display: flex;
       align-items: center;
       gap: 10px;
-      background: white;
+      background: var(--input-bg);
+      /* 입력창 배경 */
       border-radius: 25px;
       padding: 10px 15px;
       box-shadow: 0 2px 4px var(--shadow-color);
@@ -180,87 +230,156 @@
       outline: none;
       font-size: 15px;
       padding: 8px 0;
-      color: #212529;
+      color: var(--text-color) !important;
+      /* 일반 텍스트 색상 */
       transition: color var(--transition-duration);
     }
 
+    .input-wrapper input::placeholder {
+      color: var(--secondary-color) !important;
+    }
+
     .input-wrapper input:focus {
-      color: #000000 !important;
-      /* 검정색 텍스트 유지 */
+      color: var(--text-color) !important;
     }
 
     .send-icon {
       cursor: pointer;
-      background: none;
+      background: linear-gradient(135deg, #ffffff, #ffffff);
       border: none;
-      font-size: 18px;
-      color: var(--primary-color);
+      border-radius: 50%;
+      width: 40px;
+      height: 40px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #212121;
+      font-size: 16px;
       transition: all var(--transition-duration);
+      box-shadow: 0 2px 8px rgba(74, 144, 226, 0.3);
     }
 
     .send-icon:hover {
-      transform: scale(1.1);
-      color: #0056b3;
+      transform: scale(1.1) rotate(5deg);
+      box-shadow: 0 4px 12px rgba(74, 144, 226, 0.5);
+      background: linear-gradient(135deg, #5ba2f5, #4a90e2);
     }
 
-    /* PDF Upload Section */
-    .pdf-upload {
-      padding: 15px;
-      border-top: 1px solid var(--border-color);
-      background-color: #f8f9fa;
+    .send-icon:active {
+      transform: scale(0.95);
+      transition: transform 0.1s;
+    }
+
+    /* 전송 중 애니메이션 */
+    .send-icon.sending {
+      animation: sending 1s ease-in-out infinite;
+    }
+
+    @keyframes sending {
+
+      0%,
+      100% {
+        transform: scale(1) rotate(0deg);
+      }
+
+      50% {
+        transform: scale(1.1) rotate(10deg);
+      }
+    }
+
+    /* Floating Action Buttons - 채팅 입력창 아래 배치 */
+    .floating-actions {
+      position: relative;
+      bottom: 0;
+      left: 0;
+      transform: none;
+      display: flex;
+      gap: 15px;
+      z-index: 1000;
+      justify-content: flex-start;
+      /* 왼쪽 정렬로 변경 */
+      width: 100%;
+      padding: 15px 20px 0 20px;
+      box-sizing: border-box;
+    }
+
+    .floating-btn {
+      padding: 8px 12px;
+      border: none;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all var(--transition-duration);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      min-width: auto;
+      height: 36px;
       display: flex;
       align-items: center;
-      gap: 10px;
-      transition: background-color var(--transition-duration);
+      justify-content: center;
+      background-color: var(--input-bg);
+      /* 채팅창과 같은 배경색 */
+      color: #9ca3af;
+      /* 회색 아이콘 색상 */
     }
 
-    .pdf-upload:hover {
-      background-color: #f5f5f5;
+    .floating-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+      background-color: var(--user-message-bg);
+      /* 호버 시 약간 다른 색상 */
+    }
+
+    .floating-btn.primary {
+      background-color: var(--input-bg);
+      /* 기본 배경색으로 변경 */
+      color: #9ca3af;
+      /* 회색 아이콘 */
+    }
+
+    .floating-btn.danger {
+      background-color: var(--input-bg);
+      /* 기본 배경색으로 변경 */
+      color: #9ca3af;
+      /* 회색 아이콘 */
+    }
+
+    .floating-btn.warning {
+      background-color: var(--input-bg);
+      /* 기본 배경색으로 변경 */
+      color: #9ca3af;
+      /* 회색 아이콘 */
+    }
+
+    .floating-btn:active {
+      transform: translateY(0);
+    }
+
+    /* Hidden file input */
+    .pdf-upload {
+      display: none;
     }
 
     .pdf-upload input[type="file"] {
-      flex: 1;
-      font-size: 14px;
-      padding: 8px;
-      border: 1px solid var(--border-color);
-      border-radius: 8px;
-      outline: none;
-      transition: all var(--transition-duration);
+      display: none;
     }
 
-    .pdf-upload input[type="file"]:hover {
-      border-color: var(--primary-color);
+    /* Blur overlay when buttons are active */
+    .chat-container.blur-background .chat-body {
+      filter: blur(2px);
+      pointer-events: none;
+      transition: filter 0.3s ease;
     }
 
-    .pdf-upload button {
-      padding: 8px 16px;
-      background-color: var(--primary-color);
-      color: white;
-      border: none;
-      border-radius: 20px;
-      cursor: pointer;
-      font-size: 14px;
-      transition: all var(--transition-duration);
+    .chat-container.blur-background .chat-input {
+      filter: blur(2px);
+      pointer-events: none;
+      transition: filter 0.3s ease;
     }
 
-    .pdf-upload button:hover {
-      background-color: #0056b3;
-      transform: translateY(-1px);
-      box-shadow: 0 2px 4px var(--shadow-color);
-    }
-
-    /* System Log Styles */
-    .system-log {
-      width: 100%;
-      max-width: 100%;
-      height: calc(100vh - 30px);
-      background-color: var(--card-background);
-      border-radius: 20px;
-      box-shadow: 0 8px 24px var(--shadow-color);
-      overflow: hidden;
-      transition: all var(--transition-duration);
-    }
-
+    /* System Log Styles - 위에서 이미 정의됨 */
     .system-log:hover {
       box-shadow: 0 12px 32px var(--shadow-color);
     }
@@ -270,9 +389,11 @@
       height: calc(100% - 60px);
       overflow-y: auto;
       font-size: 13px;
-      color: #333;
+      color: var(--text-color);
       scrollbar-width: thin;
-      scrollbar-color: var(--border-color) transparent;
+      scrollbar-color: var(--scrollbar-color) transparent;
+      background-color: var(--background-color);
+      /* ChatGPT 배경색 */
     }
 
     .system-log-body::-webkit-scrollbar {
@@ -284,31 +405,19 @@
     }
 
     .system-log-body::-webkit-scrollbar-thumb {
-      background-color: var(--border-color);
+      background-color: var(--scrollbar-color);
       border-radius: 4px;
     }
 
     .system-log-message {
       padding: 10px;
       margin: 5px 0;
-      background-color: #f8f9fa;
+      background-color: var(--code-bg);
+      /* 코드 블럭 배경색 사용 */
       border-radius: 8px;
       font-family: monospace;
       word-break: break-all;
-    }
-
-    body {
-      min-height: 100vh;
-      height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 20px;
-      background: #f8f9fa;
-      margin: 0;
-      padding: 15px;
-      box-sizing: border-box;
-      overflow: hidden;
+      color: var(--text-color);
     }
 
     #chat-popup-alt {
@@ -317,7 +426,7 @@
       width: 100%;
       max-width: 100%;
       height: calc(100vh - 30px);
-      background-color: #fff;
+      background-color: var(--card-background);
       border-radius: 30px;
       box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3);
       opacity: 1;
@@ -331,7 +440,8 @@
       padding: 20px;
       font-size: 16px;
       text-align: center;
-      border-bottom: 1px solid #ddd;
+      border-bottom: 1px solid var(--border-color);
+      color: var(--text-color);
     }
 
     #chat-svg-alt {
@@ -341,7 +451,7 @@
     #chat-header-alt small {
       display: block;
       font-size: 12px;
-      color: #666;
+      color: var(--secondary-color);
     }
 
     #chat-body-alt {
@@ -355,7 +465,8 @@
     .input-wrapper-alt {
       display: flex;
       align-items: center;
-      background: #f1f1f1;
+      background: var(--input-bg);
+      /* 입력창 배경 */
       border-radius: 30px;
       padding: 5px 10px;
     }
@@ -367,18 +478,67 @@
       outline: none;
       font-size: 16px;
       padding: 10px;
+      color: var(--text-color) !important;
+      /* 일반 텍스트 색상 */
+    }
+
+    .input-wrapper-alt input::placeholder {
+      color: var(--secondary-color) !important;
+    }
+
+    /* Input field text color - 추가된 스타일 */
+    #chat-input-field,
+    #chat-input-field-alt {
+      color: var(--text-color) !important;
+    }
+
+    /* Placeholder text color - 추가된 스타일 */
+    #chat-input-field::placeholder,
+    #chat-input-field-alt::placeholder {
+      color: var(--secondary-color) !important;
+    }
+
+    /* Code block styles - ChatGPT 스타일 */
+    pre,
+    code {
+      background-color: var(--code-bg) !important;
+      /* 코드 블럭 배경 */
+      color: var(--text-color-bright) !important;
+      /* 코드 블럭 내 텍스트 색상 */
+      border-radius: 6px;
+      padding: 12px;
+      font-family: 'Courier New', Courier, monospace;
+      overflow-x: auto;
+    }
+
+    /* Inline code */
+    code {
+      padding: 2px 4px;
+      font-size: 0.9em;
+    }
+
+    /* Block code */
+    pre {
+      margin: 10px 0;
+      line-height: 1.4;
+    }
+
+    pre code {
+      background: none !important;
+      padding: 0;
     }
 
     .send-icon-alt {
       cursor: pointer;
       background: none;
       border: none;
+      color: var(--primary-color);
     }
   </style>
 </head>
 
 <body>
-  <div class="chat-container" id="chat-container-alt">
+  <!-- <div class="chat-container" id="chat-container-alt">
     <div class="chat-header">
       <svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
         <circle cx="12" cy="12" r="10" />
@@ -393,9 +553,9 @@
         <button class="send-icon" id="sendButton-alt">→</button>
       </div>
     </div>
-  </div>
+  </div> -->
 
-    <div class="chat-container" id="chat-container-main">
+  <div class="chat-container" id="chat-container-main">
     <div class="chat-header">
       <svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
         <circle cx="12" cy="12" r="10" />
@@ -407,14 +567,17 @@
     </div>
     <div class="pdf-upload">
       <input type="file" id="pdfInput-main" accept="application/pdf" style="display: none;" />
-      <button id="uploadPdfBtn-main">PDF 업로드</button>
-      <button id="resetDataBtn-main" style="background-color: #dc3545;">데이터 초기화</button>
-      <button id="resetPromptBtn-main" style="background-color: #ffc107; color: #212529;">프롬프트 초기화</button>
     </div>
     <div class="chat-input">
       <div class="input-wrapper">
         <input type="text" id="chat-input-field-main" placeholder="메시지를 입력해주세요.">
         <button class="send-icon" id="sendButton-main">→</button>
+      </div>
+      <!-- Floating Action Buttons - 채팅 입력창 아래 배치 -->
+      <div class="floating-actions">
+        <button class="floating-btn primary" id="uploadPdfBtn-main">📄</button>
+        <button class="floating-btn danger" id="resetDataBtn-main">🗑️</button>
+        <button class="floating-btn warning" id="resetPromptBtn-main">⚙️</button>
       </div>
     </div>
   </div>
@@ -480,7 +643,11 @@
 
         appendMessage("user", message);
         input.value = "";
-        sendButton.style.display = "none";
+
+        // 전송 버튼 애니메이션 시작
+        sendButton.classList.add("sending");
+        sendButton.style.pointerEvents = "none";
+
         partial = "";
         lastBotDiv = null;
         let references = "";
@@ -534,7 +701,9 @@
           console.error("전송 오류:", err);
           appendMessage("bot", "오류가 발생했습니다. 다시 시도해주세요.");
         } finally {
-          sendButton.style.display = "";
+          // 전송 버튼 애니메이션 종료
+          sendButton.classList.remove("sending");
+          sendButton.style.pointerEvents = "auto";
         }
       }
       // PDF 업로드 함수 (폴링 추가)
@@ -619,7 +788,7 @@
       async function pollTaskStatus(task_id) {
         // 해당 task_id에 대한 마지막 로그 수 초기화 (uploadPdf에서 설정했을 수도 있음)
         if (lastProcessedLogCounts[task_id] === undefined) {
-            lastProcessedLogCounts[task_id] = 0;
+          lastProcessedLogCounts[task_id] = 0;
         }
 
         const interval = setInterval(async () => {
@@ -701,7 +870,7 @@
           if (response.ok && result.success) {
             appendMessage("bot", "사용자 데이터가 성공적으로 초기화되었습니다.");
             appendSystemLog(`사용자 [${userId}] 데이터 초기화 완료: ${result.message}`);
-            
+
             // 초기화 로그들을 시스템 로그에 출력
             if (result.logs && Array.isArray(result.logs)) {
               result.logs.forEach(msg => appendSystemLog(msg));
@@ -709,7 +878,7 @@
           } else {
             appendMessage("bot", `데이터 초기화 실패: ${result.detail || "서버 오류"}`);
             appendSystemLog(`사용자 [${userId}] 데이터 초기화 실패: ${result.detail}`);
-            
+
             // 실패 로그들도 시스템 로그에 출력
             if (result.logs && Array.isArray(result.logs)) {
               result.logs.forEach(msg => appendSystemLog(msg));
@@ -734,7 +903,7 @@
         if (!confirm("정말로 사용자 정의 시스템 프롬프트를 기본값으로 초기화하시겠습니까?")) {
           return;
         }
-        
+
         appendSystemLog(`사용자 [${userId}] 프롬프트 초기화 요청 중...`);
         try {
           const response = await fetch(`${API_BASE}/chat/reset_prompt`, {
