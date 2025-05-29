@@ -26,43 +26,147 @@ client = OpenAI(api_key=settings.OPENAI_API_KEY)
 # Global cache for default system prompt
 _default_system_prompt_cache = None
 
-# 새로운 기본 시스템 프롬프트 템플릿
-BASE_SYSTEM_PROMPT_TEMPLATE = """
-{user_specific_prompt_or_default}
+# ========================================================================================
+# 줄바꿈 포맷팅 규칙 - 시스템 프롬프트용 상수
+# ========================================================================================
 
-{reference_document_section}
+FORMATTING_RULES_SYSTEM_PROMPT = """=== 필수 응답 형식 규칙 ===
 
-**매우 중요: 줄바꿈 규칙을 반드시 준수하세요!**
+**중요: 다음 줄바꿈 규칙을 반드시 준수하세요**
 
-답변할 때 다음 규칙을 **절대** 무시하지 마세요:
+1. 문장이 끝날 때마다 \\n을 추가하세요
+2. 새로운 단락 시작 시 \\n\\n을 사용하세요
+3. 목록 항목 끝에 \\n을 추가하세요
+4. 제목/헤더 뒤에 \\n\\n을 추가하세요
+5. 긴 텍스트를 줄바꿈 없이 연속 작성하지 마세요
 
-1. **줄바꿈이 필요할때 혹은 문장이 끝났을 때**: 반드시 '\n'을 붙이세요
-2. **단락을 나눌 때**: '\n\n'을 사용하세요  
-3. **목록 항목 끝**: '\n'을 붙이세요
-4. **제목 뒤**: '\n\n'을 붙이세요
+**올바른 예시:**
+"안녕하세요.\\n도움이 필요하시군요.\\n\\n저는 AI 어시스턴트입니다.\\n무엇을 도와드릴까요?"
 
-**예시:**
-잘못된 예: "캐디안을 재설치하고 재인증하는 방법은 다음과 같습니다:1. **캐디안 앱 삭제**: 먼저 기기에서 기존에 설치된 캐디안 앱을 삭제해야 합니다. 스마트폰이나 태블릿의 설정으로 이동하여 캐디안 앱을 찾아 삭제하세요.2. **캐디안 앱 재설치**: 이후 앱 스토어(구글 플레이 스토어 또는 애플 앱 스토어)에서 "캐디안"을 검색하고 앱을 다시 설치합니다.3. **재인증**: 앱을 실행한 후, 회원 가입 또는 로그인을 진행하여 계정을 다시 인증하세요. 필요하다면 이메일 또는 전화번호를 통한 인증 단계를 거치게 됩니다.위의 단계를 따라 캐디안을 재설치하고 재인증할 수 있습니다. 정상적으로 인증을 완료하면 캐디안 앱을 다시 이용할 수 있게 됩니다. 혹시 추가 질문이 있거나 도움이 필요하시면 언제든지 물어보세요.캐디안 관련하여 도와드릴게요."
-올바른 예: "캐디안을 재설치하고 재인증하는 방법은 다음과 같습니다:\n\n1. **캐디안 앱 삭제**:\n먼저 기기에서 기존에 설치된 캐디안 앱을 삭제해야 합니다.\n스마트폰이나 태블릿의 설정으로 이동하여 캐디안 앱을 찾아 삭제하세요.\n\n2. **캐디안 앱 재설치**:\n이후 앱 스토어(구글 플레이 스토어 또는 애플 앱 스토어)에서 \"캐디안\"을 검색하고 앱을 다시 설치합니다.\n\n3. **재인증**:\n앱을 실행한 후, 회원 가입 또는 로그인을 진행하여 계정을 다시 인증하세요.\n필요하다면 이메일 또는 전화번호를 통한 인증 단계를 거치게 됩니다.\n\n위의 단계를 따라 캐디안을 재설치하고 재인증할 수 있습니다.\n정상적으로 인증을 완료하면 캐디안 앱을 다시 이용할 수 있게 됩니다.\n\n혹시 추가 질문이 있거나 도움이 필요하시면 언제든지 물어보세요.\n캐디안 관련하여 도와드릴게요.";
+**잘못된 예시:**
+"안녕하세요. 도움이 필요하시군요. 저는 AI 어시스턴트입니다. 무엇을 도와드릴까요?"
 
-**반드시 이 형식으로 답변하세요:**
-- 줄바꿈이 필요할때 혹은 문장이 끝났을 때 '\n' 추가
-- 새 단락 시작할 때 '\n\n' 사용
-- 절대 줄바꿈 없이 긴 텍스트 연속 작성 금지
+이 규칙을 지키지 않으면 텍스트가 읽기 어려운 형태로 표시됩니다."""
 
-이 규칙을 지키지 않으면 텍스트가 한 줄로 뭉쳐져 읽기 어려워집니다.
-"""
+# ========================================================================================
+# OpenAI 메시지 구조 구성 함수들 - 완전히 새로운 설계
+# ========================================================================================
 
-@router.post("/stream") # 경로 수정: "/chat/stream" -> "/stream"
+def build_system_message(user_role: str = None, reference_docs: str = None) -> str:
+    """시스템 메시지를 구성합니다."""
+    
+    # 기본 역할 설정
+    base_role = user_role or "당신은 친절하고 도움이 되는 AI 어시스턴트입니다. 사용자의 질문에 정확하고 유용한 답변을 제공해주세요."
+    
+    # 시스템 메시지 구성 요소들
+    system_components = []
+    
+    # 1. 기본 역할 정의
+    system_components.append(f"=== AI 어시스턴트 역할 ===\n{base_role}")
+    
+    # 2. 참조 문서 (있는 경우)
+    if reference_docs:
+        system_components.append(f"=== 참조 문서 내용 ===\n{reference_docs}")
+    
+    # 3. 필수 응답 형식 규칙 (항상 포함) - 별도 상수 사용
+    system_components.append(FORMATTING_RULES_SYSTEM_PROMPT)
+    
+    return "\n\n".join(system_components)
+
+def build_conversation_messages(chat_history: list) -> list:
+    """대화 기록을 OpenAI 메시지 형식으로 변환합니다."""
+    messages = []
+    
+    for chat_entry in chat_history:
+        # 사용자 메시지 추가
+        messages.append({
+            "role": "user", 
+            "content": chat_entry.user_message
+        })
+        
+        # 어시스턴트 응답 추가 (있는 경우)
+        if chat_entry.bot_response:
+            messages.append({
+                "role": "assistant", 
+                "content": chat_entry.bot_response
+            })
+    
+    return messages
+
+def build_openai_message_structure(system_message: str, conversation_history: list, current_user_message: str) -> list:
+    """
+    최종 OpenAI API 메시지 구조를 구성합니다.
+    
+    구조:
+    [
+        {"role": "system", "content": "시스템 지시 프롬프트"},
+        {"role": "user", "content": "이전 사용자 입력 1"},
+        {"role": "assistant", "content": "이전 GPT 응답 1 (선택 사항)"},
+        {"role": "user", "content": "이전 사용자 입력 2"},
+        {"role": "assistant", "content": "이전 GPT 응답 2 (선택 사항)"},
+        ...
+        {"role": "user", "content": "현재 사용자 입력"}
+    ]
+    """
+    messages = []
+    
+    # 1. 시스템 메시지 (항상 첫 번째)
+    messages.append({
+        "role": "system",
+        "content": system_message
+    })
+    
+    # 2. 이전 대화 기록 추가 (시간순)
+    messages.extend(conversation_history)
+    
+    # 3. 현재 사용자 메시지 추가 (마지막)
+    messages.append({
+        "role": "user",
+        "content": current_user_message
+    })
+    
+    return messages
+
+def validate_message_structure(messages: list) -> bool:
+    """메시지 구조가 올바른지 검증합니다."""
+    if not messages:
+        return False
+    
+    # 첫 번째 메시지는 반드시 system이어야 함
+    if messages[0].get("role") != "system":
+        return False
+    
+    # 마지막 메시지는 반드시 user여야 함
+    if messages[-1].get("role") != "user":
+        return False
+    
+    # 모든 메시지에 role과 content가 있는지 확인
+    for msg in messages:
+        if "role" not in msg or "content" not in msg:
+            return False
+        if msg["role"] not in ["system", "user", "assistant"]:
+            return False
+        if not isinstance(msg["content"], str) or not msg["content"].strip():
+            return False
+    
+    return True
+
+# 기존 템플릿 제거하고 새로운 구조 사용
+# BASE_SYSTEM_PROMPT_TEMPLATE 제거
+
+@router.post("/stream")
 async def chat_stream(request: Request, x_user_id: str = Header(..., description="클라이언트 UUID")):
     data = await request.json()
     message = data.get("message", "")
+    
+    print(f"[INFO] 채팅 스트림 시작 - 사용자: {x_user_id}, 메시지: '{message[:50]}...'")
 
-    openai_chat_history_list = []
+    # 1. 사용자 설정 및 대화 기록 조회
     user_system_prompt_content = ""
-
+    chat_history = []
+    
     async with async_session() as session:
-        # 1. 사용자별 시스템 프롬프트 가져오기
+        # 사용자별 시스템 프롬프트 가져오기
         user_pref_result = await session.execute(
             select(UserPreference).where(UserPreference.user_id == x_user_id)
         )
@@ -70,13 +174,12 @@ async def chat_stream(request: Request, x_user_id: str = Header(..., description
 
         if user_pref and user_pref.system_prompt:
             user_system_prompt_content = user_pref.system_prompt
-            print(f"[DEBUG] 사용자 {x_user_id}의 맞춤 시스템 프롬프트 적용: '{user_system_prompt_content}'")
+            print(f"[DEBUG] 사용자 {x_user_id}의 맞춤 시스템 프롬프트 적용")
         else:
-            # 기본 프롬프트 설정 (캐시 대신 직접 정의)
-            user_system_prompt_content = "You are a friendly and helpful AI assistant."
-            print(f"[DEBUG] 사용자 {x_user_id}에게 기본 시스템 프롬프트 적용: '{user_system_prompt_content}'")
+            user_system_prompt_content = "당신은 친절하고 도움이 되는 AI 어시스턴트입니다. 사용자의 질문에 정확하고 유용한 답변을 제공해주세요."
+            print(f"[DEBUG] 사용자 {x_user_id}에게 기본 시스템 프롬프트 적용")
 
-        # 2. 이전 대화 기록 가져오기
+        # 이전 대화 기록 가져오기 (최근 20개)
         previous_chats_result = await session.execute(
             select(ChatHistory)
             .where(ChatHistory.user_id == x_user_id)
@@ -84,21 +187,14 @@ async def chat_stream(request: Request, x_user_id: str = Header(..., description
             .limit(20)
         )
         db_previous_chats = previous_chats_result.scalars().all()
-        db_previous_chats.reverse()
+        chat_history = list(reversed(db_previous_chats))  # 시간순 정렬
 
-        for chat_entry in db_previous_chats:
-            openai_chat_history_list.append({"role": "user", "content": chat_entry.user_message})
-            if chat_entry.bot_response:
-                openai_chat_history_list.append({"role": "assistant", "content": chat_entry.bot_response})
-
-    openai_chat_history_list.append({"role": "user", "content": message})
-
-    # 문서 검색 및 참조 처리
+    # 2. 문서 검색 및 참조 처리
     context_text_for_prompt = ""
-    referenced_docs_for_response_display = [] # 전체 문서 메타데이터를 담을 리스트
+    referenced_docs_for_response_display = []
     recommended_response_style = ""
     
-    # "방금 업로드한 문서", "최근 업로드한", "업로드한 문서" 등의 키워드 감지
+    # 키워드 감지
     recent_doc_keywords = [
         "방금 업로드", "최근 업로드", "업로드한 문서", "내가 올린", "방금 올린", "최근에 올린",
         "방금 등록", "최근 등록", "등록한 문서", "방금 추가", "최근 추가", "추가한 문서",
@@ -106,7 +202,6 @@ async def chat_stream(request: Request, x_user_id: str = Header(..., description
         "요약해", "정리해", "설명해", "알려줘", "뭐가 있어", "어떤 내용"
     ]
     
-    # 목차 관련 키워드 확장
     table_of_contents_keywords = [
         "목차", "차례", "목록", "구성", "내용", "인덱스", "개요", "구조",
         "table of contents", "contents", "index", "outline", "structure",
@@ -119,22 +214,20 @@ async def chat_stream(request: Request, x_user_id: str = Header(..., description
     if index.ntotal > 0:
         print(f"[DEBUG] FAISS 인덱스에 {index.ntotal}개 벡터 로드됨. 문서 검색 시작...")
         
-        # 최근 문서 쿼리인 경우 특별 처리
+        # 문서 검색
         if is_recent_doc_query:
-            print(f"[DEBUG] 최근 업로드 문서 관련 질문 감지: '{message}'")
-            # 최근 업로드된 문서를 우선적으로 검색
+            print(f"[DEBUG] 최근 업로드 문서 관련 질문 감지")
             retrieved_documents_details = await search_recent_documents_first(message, x_user_id)
         elif is_toc_query:
-            print(f"[DEBUG] 목차 관련 질문 감지: '{message}'")
-            # 목차 관련 검색 수행 (확장된 검색)
+            print(f"[DEBUG] 목차 관련 질문 감지")
             retrieved_documents_details = await search_similar_documents(message, x_user_id)
         else:
             retrieved_documents_details = await search_similar_documents(message, x_user_id)
             
         if retrieved_documents_details:
-            print(f"[DEBUG] 사용자 {x_user_id}에 대해 검색된 관련 문서 수: {len(retrieved_documents_details)}")
+            print(f"[DEBUG] 검색된 관련 문서 수: {len(retrieved_documents_details)}")
             
-            # 프롬프트에 포함할 컨텍스트 생성 (메타데이터 포함)
+            # 컨텍스트 생성
             context_parts = []
             response_styles = []
             for doc_detail in retrieved_documents_details:
@@ -144,70 +237,85 @@ async def chat_stream(request: Request, x_user_id: str = Header(..., description
                 response_style = doc_detail.get('response_style', '')
                 pdf_name = doc_detail.get('pdf_name', '')
                 
-                # 메타데이터가 포함된 컨텍스트 생성
                 context_part = f"[문서: {pdf_name}]\n제목: {title}"
                 if summary:
                     context_part += f"\n요약: {summary}"
                 context_part += f"\n내용: {text_content}"
                 context_parts.append(context_part)
                 
-                # 응답 스타일 수집
                 if response_style:
                     response_styles.append(response_style)
             
             context_text_for_prompt = "\n\n".join(context_parts)
-            print(f"[DEBUG] 생성된 컨텍스트 길이: {len(context_text_for_prompt)} 문자")
             
-            # 가장 빈번한 응답 스타일 선택
             if response_styles:
                 recommended_response_style = max(set(response_styles), key=response_styles.count)
                 print(f"[DEBUG] 권장 응답 스타일: {recommended_response_style}")
             
             referenced_docs_for_response_display = retrieved_documents_details
         else:
-            print(f"[DEBUG] 사용자 {x_user_id}에 대해 검색된 관련 문서가 없습니다.")
+            print(f"[DEBUG] 검색된 관련 문서가 없습니다.")
     else:
-        print(f"[DEBUG] FAISS 인덱스가 비어있습니다 (ntotal: {index.ntotal}). 문서 검색을 건너뜁니다.") 
+        print(f"[DEBUG] FAISS 인덱스가 비어있습니다.")
 
-    reference_document_section_content = ""
+    # 3. 참조 문서 내용 구성
+    reference_document_content = ""
     if context_text_for_prompt:
         style_instruction = ""
         if recommended_response_style:
             style_instruction = f"\n\n응답 스타일 지침: {recommended_response_style} 스타일로 답변해주세요."
         
-        # 목차 관련 질문인 경우 특별한 지침 추가
         toc_instruction = ""
         if is_toc_query:
-            toc_instruction = f"\n\n특별 지침: 사용자가 목차, 차례, 구성에 대해 질문했습니다. 문서의 전체 구조와 목차 정보를 최대한 상세하게 정리하여 제공해주세요. 각 장이나 섹션의 제목과 주요 내용을 포함하여 답변해주세요."
+            toc_instruction = f"\n\n특별 지침: 사용자가 목차, 차례, 구성에 대해 질문했습니다. 문서의 전체 구조와 목차 정보를 최대한 상세하게 정리하여 제공해주세요."
         
-        reference_document_section_content = f"""다음은 사용자가 업로드한 문서에서 현재 대화와 관련성이 높은 내용입니다. 각 문서는 제목, 요약, 내용으로 구성되어 있습니다. 이 내용을 최우선으로 참고하여 사용자의 질문에 답변해주세요.{style_instruction}{toc_instruction}
+        reference_document_content = f"""다음은 사용자가 업로드한 문서에서 관련성이 높은 내용입니다. 이 내용을 최우선으로 참고하여 답변해주세요.{style_instruction}{toc_instruction}
 
-[참고 문서 내용 시작]
+[참고 문서 내용]
 {context_text_for_prompt}
 [참고 문서 내용 끝]
 """
     else:
-        reference_document_section_content = "현재 사용자가 업로드한 문서 중 대화와 관련된 내용을 찾지 못했습니다. 일반적인 지식을 바탕으로 답변해주세요."
+        reference_document_content = "현재 업로드된 문서 중 관련된 내용을 찾지 못했습니다. 일반적인 지식을 바탕으로 답변해주세요."
 
-    final_system_prompt = BASE_SYSTEM_PROMPT_TEMPLATE.format(
-        user_specific_prompt_or_default=user_system_prompt_content,
-        reference_document_section=reference_document_section_content
-    ).strip()
+    # 4. 시스템 메시지 구성
+    system_message = build_system_message(
+        user_role=user_system_prompt_content,
+        reference_docs=reference_document_content
+    )
 
-    print(f"[DEBUG] 최종 시스템 프롬프트 (사용자 {x_user_id}):\\n{final_system_prompt}")
+    # 5. 대화 기록을 OpenAI 메시지 형식으로 변환
+    conversation_messages = build_conversation_messages(chat_history)
 
-    messages_to_send_to_openai = [{"role": "system", "content": final_system_prompt}] + openai_chat_history_list
+    # 6. 최종 OpenAI 메시지 구조 구성
+    messages_to_send_to_openai = build_openai_message_structure(
+        system_message=system_message,
+        conversation_history=conversation_messages,
+        current_user_message=message
+    )
 
+    # 7. 메시지 구조 검증
+    if not validate_message_structure(messages_to_send_to_openai):
+        print(f"[ERROR] 메시지 구조 검증 실패")
+        raise HTTPException(status_code=500, detail="메시지 구조 구성 오류")
+
+    print(f"[DEBUG] OpenAI 메시지 구조 구성 완료 - 총 {len(messages_to_send_to_openai)}개 메시지")
+    print(f"[DEBUG] 시스템 메시지 길이: {len(system_message)} 문자")
+    print(f"[DEBUG] 대화 기록: {len(conversation_messages)}개 메시지")
+
+    # 8. OpenAI API 스트리밍 실행
     async def event_stream():
         full_response_content = ""
-        buffer = ""  # 토큰 버퍼
-        buffer_size_limit = 15  # 버퍼 크기 축소 (더 빠른 업데이트)
+        buffer = ""
+        buffer_size_limit = 15
         
         try:
+            print(f"[DEBUG] OpenAI API 호출 시작 - 모델: gpt-3.5-turbo")
             openai_response_stream = client.chat.completions.create(
                 model="gpt-3.5-turbo",
                 messages=messages_to_send_to_openai,
-                stream=True
+                stream=True,
+                temperature=0.7
             )
             
             for chunk in openai_response_stream:
@@ -218,26 +326,25 @@ async def chat_stream(request: Request, x_user_id: str = Header(..., description
                     
                     should_flush = (
                         len(buffer) >= buffer_size_limit or
-                        '\n' in buffer  # 줄바꿈이 포함되면 즉시 전송
+                        '\n' in buffer
                     )
                     
                     if should_flush and buffer.strip():
-                        # 원본 텍스트 그대로 전송 (클라이언트에서 마크다운 처리)
                         yield f"data: {buffer}\n"
-                        yield "\n"  # SSE 메시지 구분
-                        buffer = ""  # 버퍼 초기화
-                        await asyncio.sleep(0.01)  # 지연 시간 단축 (10ms로 줄임)
+                        yield "\n"
+                        buffer = ""
+                        await asyncio.sleep(0.01)
             
-            # 스트림 종료 후 남은 버퍼 전송
+            # 남은 버퍼 전송
             if buffer.strip():
                 yield f"data: {buffer}\n"
                 yield "\n"
             
-            # 스트림 완료 신호
+            # 완료 신호
             yield f"data: [DONE]\n"
             yield "\n"
             
-            # 대화 기록을 DB에 저장
+            # 대화 기록 저장
             async with async_session() as session:
                 new_chat = ChatHistory(
                     user_id=x_user_id,
@@ -246,7 +353,7 @@ async def chat_stream(request: Request, x_user_id: str = Header(..., description
                 )
                 session.add(new_chat)
                 await session.commit()
-                print(f"[DEBUG] 대화 기록 저장 완료 - 사용자: {x_user_id}")
+                print(f"[DEBUG] 대화 기록 저장 완료")
 
         except Exception as e:
             print(f"[ERROR] 스트리밍 중 오류 발생: {str(e)}")
