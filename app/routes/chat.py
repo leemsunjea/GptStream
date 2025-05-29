@@ -205,7 +205,7 @@ async def chat_stream(request: Request, x_user_id: str = Header(..., description
         
         try:
             openai_response_stream = client.chat.completions.create(
-                model="text-davinci-003",
+                model="gpt-3.5-turbo",
                 messages=messages_to_send_to_openai,
                 stream=True
             )
