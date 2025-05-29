@@ -588,6 +588,54 @@
       padding: 0;
     }
 
+    /* 마크다운 헤더 스타일 */
+    .message.bot h1,
+    .message.bot h2,
+    .message.bot h3 {
+      color: var(--text-color-bright);
+      margin: 16px 0 8px 0;
+      font-weight: 600;
+    }
+
+    .message.bot h1 {
+      font-size: 1.5em;
+      border-bottom: 2px solid var(--border-color);
+      padding-bottom: 4px;
+    }
+
+    .message.bot h2 {
+      font-size: 1.3em;
+      border-bottom: 1px solid var(--border-color);
+      padding-bottom: 2px;
+    }
+
+    .message.bot h3 {
+      font-size: 1.1em;
+    }
+
+    /* 마크다운 목록 스타일 */
+    .message.bot ul,
+    .message.bot ol {
+      margin: 8px 0;
+      padding-left: 20px;
+    }
+
+    .message.bot li {
+      margin: 4px 0;
+      line-height: 1.5;
+    }
+
+    /* 마크다운 강조 스타일 */
+    .message.bot strong {
+      color: var(--text-color-bright);
+      font-weight: 600;
+    }
+
+    .message.bot em {
+      color: var(--secondary-color);
+      font-style: italic;
+    }
+
     .send-icon-alt {
       cursor: pointer;
       background: none;
@@ -689,9 +737,9 @@
         html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
         
         // 3. 제목 처리
-        html = html.replace(/^### (.*$)/gm, '<h3>$1</h3>');
-        html = html.replace(/^## (.*$)/gm, '<h2>$1</h2>');
-        html = html.replace(/^# (.*$)/gm, '<h1>$1</h1>');
+        html = html.replace(/^### ?(.*$)/gm, '<h3>$1</h3>');
+        html = html.replace(/^## ?(.*$)/gm, '<h2>$1</h2>');
+        html = html.replace(/^# ?(.*$)/gm, '<h1>$1</h1>'); // 공백 선택적
         
         // 4. 목록 처리 - 줄 단위로 분리해서 처리
         const lines = html.split('\n');
@@ -754,9 +802,13 @@
         if (inOrderedList) result.push('</ol>');
         if (inUnorderedList) result.push('</ul>');
         
-        // 5. 줄바꿈 처리
+        // 5. 줄바꿈 처리 - 사용자 친화적 방식
         html = result.join('\n');
-        html = html.replace(/\n\n/g, '<br><br>');
+        
+        // 두 개 이상의 연속 줄바꿈은 단락 구분
+        html = html.replace(/\n\n+/g, '<br><br>');
+        
+        // 일반 줄바꿈은 <br>로 변환 (채팅에서 더 직관적)
         html = html.replace(/\n/g, '<br>');
         
         return html;
