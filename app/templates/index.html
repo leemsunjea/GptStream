@@ -676,6 +676,43 @@
       let lastBotDiv = null;
       let partial = "";
 
+      // 간단한 마크다운 파서 함수
+      function parseMarkdown(text) {
+        return text
+          // 볼드 텍스트: **text** -> <strong>text</strong>
+          .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+          // 이탤릭 텍스트: *text* -> <em>text</em>
+          .replace(/\*(.*?)\*/g, '<em>$1</em>')
+          // 코드 블록: ```code``` -> <pre><code>code</code></pre>
+          .replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>')
+          // 인라인 코드: `code` -> <code>code</code>
+          .replace(/`(.*?)`/g, '<code>$1</code>')
+          // 번호 목록: 1. text -> <ol><li>text</li></ol>
+          .replace(/^(\d+\.)\s+(.+)$/gm, '<li>$2</li>')
+          .replace(/(<li>.*<\/li>)/gs, '<ol>$1</ol>')
+          // 순서 없는 목록: - text 또는 * text -> <ul><li>text</li></ul>
+          .replace(/^[-*]\s+(.+)$/gm, '<li>$1</li>')
+          .replace(/(<li>.*<\/li>)/gs, function(match) {
+            if (match.includes('<ol>')) return match;
+            return '<ul>' + match + '</ul>';
+          })
+          // 제목: # text -> <h1>text</h1>
+          .replace(/^### (.*$)/gm, '<h3>$1</h3>')
+          .replace(/^## (.*$)/gm, '<h2>$1</h2>')
+          .replace(/^# (.*$)/gm, '<h1>$1</h1>')
+          // 줄바꿈 처리
+          .replace(/\n\n/g, '</p><p>')
+          .replace(/\n/g, '<br>')
+          // 문단 감싸기
+          .replace(/^(?!<[h|u|o|p|c|l])(.+)/gm, '<p>$1</p>')
+          // 중복 태그 정리
+          .replace(/<\/ol>\s*<ol>/g, '')
+          .replace(/<\/ul>\s*<ul>/g, '')
+          .replace(/<p><\/p>/g, '')
+          .replace(/<p>(<[h|u|o|l])/g, '$1')
+          .replace(/(<\/[h|u|o|l][^>]*>)<\/p>/g, '$1');
+      }
+
       // 메시지 추가 함수
       function appendMessage(role, message) {
         const msg = document.createElement("div");
@@ -751,7 +788,8 @@
                     lastBotDiv.classList.add("message", "bot");
                     chatBox.appendChild(lastBotDiv);
                   }
-                  lastBotDiv.innerHTML = partial;
+                  // 마크다운을 HTML로 변환해서 출력
+                  lastBotDiv.innerHTML = parseMarkdown(partial);
                 }
                 chatBox.scrollTop = chatBox.scrollHeight;
               }
@@ -1025,53 +1063,53 @@
         altChatBody.scrollTop = altChatBody.scrollHeight;
       }
 
-      // 버튼 클릭 이벤트
-      altSendButton.addEventListener("click", async function () {
-        const message = altInput.value.trim();
-        if (!message) return;
+      // // 버튼 클릭 이벤트
+      // altSendButton.addEventListener("click", async function () {
+      //   const message = altInput.value.trim();
+      //   if (!message) return;
 
-        altInput.value = "";
+      //   altInput.value = "";
 
-        let userId = localStorage.getItem("userId");
-        if (!userId) {
-          userId = crypto.randomUUID();
-          localStorage.setItem("userId", userId);
-          console.log("새로운 userId 생성 (프롬프트 추가용):", userId);
-        }
+      //   let userId = localStorage.getItem("userId");
+      //   if (!userId) {
+      //     userId = crypto.randomUUID();
+      //     localStorage.setItem("userId", userId);
+      //     console.log("새로운 userId 생성 (프롬프트 추가용):", userId);
+      //   }
 
-        try {
-          const response = await fetch("/chat/add_prompt", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "x-user-id": userId
-            },
-            body: JSON.stringify({ prompt: message })
-          });
+      //   try {
+      //     const response = await fetch("/chat/add_prompt", {
+      //       method: "POST",
+      //       headers: {
+      //         "Content-Type": "application/json",
+      //         "x-user-id": userId
+      //       },
+      //       body: JSON.stringify({ prompt: message })
+      //     });
 
-          if (!response.ok) {
-            const errorData = await response.json().catch(() => ({ detail: "서버 응답 오류" }));
-            throw new Error(errorData.detail || "서버 응답 오류");
-          }
+      //     if (!response.ok) {
+      //       const errorData = await response.json().catch(() => ({ detail: "서버 응답 오류" }));
+      //       throw new Error(errorData.detail || "서버 응답 오류");
+      //     }
 
-          const result = await response.json();
-          if (result.success && result.new_system_prompt) {
-            appendAltMessage(`프롬프트가 성공적으로 적용되었습니다: ${result.new_system_prompt}`);
-            // 메인 채팅창에도 알림 추가 (선택 사항)
-            document.getElementById("chat-body-main").appendChild(
-              Object.assign(document.createElement("div"), {
-                className: "message bot",
-                textContent: "프롬프트가 업데이트되었습니다!"
-              })
-            );
-          } else {
-            appendAltMessage("프롬프트 적용에 문제가 발생했습니다.");
-          }
-        } catch (error) {
-          console.error("프롬프트 추가 오류:", error);
-          appendAltMessage(`프롬프트 추가 중 오류가 발생했습니다: ${error.message}`);
-        }
-      });
+      //     const result = await response.json();
+      //     if (result.success && result.new_system_prompt) {
+      //       appendAltMessage(`프롬프트가 성공적으로 적용되었습니다: ${result.new_system_prompt}`);
+      //       // 메인 채팅창에도 알림 추가 (선택 사항)
+      //       document.getElementById("chat-body-main").appendChild(
+      //         Object.assign(document.createElement("div"), {
+      //           className: "message bot",
+      //           textContent: "프롬프트가 업데이트되었습니다!"
+      //         })
+      //       );
+      //     } else {
+      //       appendAltMessage("프롬프트 적용에 문제가 발생했습니다.");
+      //     }
+      //   } catch (error) {
+      //     console.error("프롬프트 추가 오류:", error);
+      //     appendAltMessage(`프롬프트 추가 중 오류가 발생했습니다: ${error.message}`);
+      //   }
+      // });
 
       // Enter 키 이벤트
       altInput.addEventListener("keypress", function (e) {
