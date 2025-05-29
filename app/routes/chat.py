@@ -190,8 +190,9 @@ async def chat_stream(request: Request, x_user_id: str = Header(..., description
                 content_piece = getattr(chunk.choices[0].delta, "content", None)
                 if content_piece:
                     full_response_content += content_piece
-                    # f-string 백슬래시 오류 수정: 문자열 연결 방식으로 변경
-                    yield "data: " + content_piece.replace("\\n", "<br>") + "\n"
+                    # 실제 줄바꿈 문자와 백슬래시+n 모두 처리
+                    formatted_content = content_piece.replace("\n", "<br>").replace("\\n", "<br>")
+                    yield "data: " + formatted_content + "\n"
                     yield "\n" # SSE 메시지 구분
                     await asyncio.sleep(0)
 

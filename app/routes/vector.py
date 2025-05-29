@@ -1,6 +1,6 @@
 from fastapi import APIRouter, File, UploadFile, BackgroundTasks, Header, HTTPException
 from fastapi.responses import JSONResponse
-from sqlalchemy import insert, delete, select # delete, select 추가
+from sqlalchemy import insert, delete, select, func # delete, select 추가
 from db.database import async_session
 from db.models import documents, embeddings
 from app.vector_db import get_embedding_async, split_text_to_paragraphs, doc_store, index, load_faiss_and_docstore # load_faiss_and_docstore 추가
@@ -230,6 +230,23 @@ async def process_pdf(task_id: str, file_path: str, filename: str, session_facto
         if processed_successfully:
             task_statuses[task_id]["status"] = "completed"
             logs.append(f"'{filename}' 처리 성공적으로 완료 (사용자: {user_id})")
+            
+            # PDF 처리 완료 후 사용자의 업로드된 문서 목록 출력
+            try:
+                user_docs = await get_user_documents_list(user_id)
+                if user_docs:
+                    logs.append(f"========== 사용자 {user_id}의 업로드된 문서 목록 ==========")
+                    for i, doc in enumerate(user_docs, 1):
+                        logs.append(f"{i}. {doc['pdf_name']} ({doc['page_count']}페이지)")
+                        logs.append(f"   업로드 일시: {doc['last_upload']}")
+                        logs.append(f"   주요 제목: {doc['sample_titles']}")
+                        logs.append("   " + "-" * 50)
+                    logs.append(f"총 {len(user_docs)}개의 PDF 문서가 업로드되어 있습니다.")
+                    logs.append("=" * 60)
+                else:
+                    logs.append(f"사용자 {user_id}에게 업로드된 문서가 없습니다.")
+            except Exception as e:
+                logs.append(f"문서 목록 조회 중 오류 발생: {e}")
         else:
             if task_statuses[task_id].get("status") != "failed":
                 task_statuses[task_id]["status"] = "failed"
@@ -348,3 +365,42 @@ async def reset_user_data(x_user_id: str = Header(..., description="클라이언
                     status_code=500, 
                     content={"success": False, "detail": f"데이터 초기화 중 서버 오류 발생: {str(e)}", "logs": logs}
                 )
+
+async def get_user_documents_list(user_id: str):
+    """특정 사용자의 업로드된 문서 목록을 가져옵니다."""
+    try:
+        async with async_session() as session:
+            # 사용자의 고유한 PDF 파일 목록 가져오기 (중복 제거)
+            stmt = select(
+                documents.c.pdf_name,
+                func.count(documents.c.id).label('page_count'),
+                func.max(documents.c.created_at).label('last_upload'),
+                func.array_agg(documents.c.title).label('titles')
+            ).where(
+                documents.c.user_id == user_id
+            ).group_by(
+                documents.c.pdf_name
+            ).order_by(
+                func.max(documents.c.created_at).desc()
+            )
+            
+            result = await session.execute(stmt)
+            documents_list = result.fetchall()
+            
+            formatted_list = []
+            for pdf_name, page_count, last_upload, titles in documents_list:
+                # 제목들을 정리 (중복 제거 및 길이 제한)
+                unique_titles = list(set([title for title in titles if title]))[:3]  # 최대 3개까지
+                titles_str = ", ".join([title[:30] + "..." if len(title) > 30 else title for title in unique_titles])
+                
+                formatted_list.append({
+                    'pdf_name': pdf_name,
+                    'page_count': page_count,
+                    'last_upload': last_upload.strftime('%Y-%m-%d %H:%M:%S') if last_upload else 'Unknown',
+                    'sample_titles': titles_str if titles_str else '제목 없음'
+                })
+            
+            return formatted_list
+    except Exception as e:
+        print(f"[ERROR] get_user_documents_list: 사용자 {user_id}의 문서 목록 조회 실패: {e}")
+        return []

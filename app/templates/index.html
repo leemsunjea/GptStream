@@ -515,7 +515,7 @@
                     lastBotDiv.classList.add("message", "bot");
                     chatBox.appendChild(lastBotDiv);
                   }
-                  lastBotDiv.textContent = partial;
+                  lastBotDiv.innerHTML = partial;
                 }
                 chatBox.scrollTop = chatBox.scrollHeight;
               }

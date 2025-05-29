@@ -35,10 +35,10 @@ async def unified_startup_event(): # 하나의 startup 함수로 통합
         async with session.begin():
             # 명시적으로 테이블 객체를 import 하여 사용
             from db.models import embeddings as embeddings_table_obj, documents as documents_table_obj
-            await session.execute(embeddings_table_obj.delete())
-            await session.execute(documents_table_obj.delete())
-            await session.commit() # begin() 컨텍스트 매니저가 자동으로 커밋/롤백 처리
-            print("⚠️ 기존 문서 및 임베딩 데이터 초기화 완료 (서버 시작 시마다 실행됨).")
+            # await session.execute(embeddings_table_obj.delete())
+            # await session.execute(documents_table_obj.delete())
+            # await session.commit() # begin() 컨텍스트 매니저가 자동으로 커밋/롤백 처리
+            # print("⚠️ 기존 문서 및 임베딩 데이터 초기화 완료 (서버 시작 시마다 실행됨).")
             print("ℹ️ 문서 및 임베딩 데이터 초기화 코드가 주석 처리되었습니다.")
 
     # 3. 기본 시스템 프롬프트 추가 (중복 방지)
