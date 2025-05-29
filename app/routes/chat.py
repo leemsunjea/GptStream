@@ -183,7 +183,7 @@ async def chat_stream(request: Request, x_user_id: str = Header(..., description
     async def event_stream():
         full_response_content = ""
         buffer = ""  # 토큰 버퍼
-        buffer_size_limit = 40  # 적정 버퍼 크기로 조정
+        buffer_size_limit = 25  # 버퍼 크기 축소 (더 빠른 업데이트)
         
         try:
             openai_response_stream = client.chat.completions.create(
@@ -224,7 +224,7 @@ async def chat_stream(request: Request, x_user_id: str = Header(..., description
                         yield f"data: {buffer}\n"
                         yield "\n"  # SSE 메시지 구분
                         buffer = ""  # 버퍼 초기화
-                        await asyncio.sleep(0.02)  # 적절한 지연으로 자연스러운 스트리밍
+                        await asyncio.sleep(0.01)  # 지연 시간 단축 (10ms로 줄임)
             
             # 스트림 종료 후 남은 버퍼 전송
             if buffer.strip():

@@ -202,16 +202,16 @@
       border-radius: 0;
       padding: 16px 0;
       white-space: pre-line;
-      /* 페이드인 애니메이션 추가 */
-      animation: fadeIn 0.8s ease-in-out forwards;
+      /* 페이드인 애니메이션 추가 - 속도 개선 */
+      animation: fadeIn 0.3s ease-out forwards;
       opacity: 0;
     }
 
-    /* 페이드인 애니메이션 정의 */
+    /* 페이드인 애니메이션 정의 - 더 빠르고 부드럽게 */
     @keyframes fadeIn {
       from {
         opacity: 0;
-        transform: translateY(10px);
+        transform: translateY(5px);
       }
 
       to {
@@ -999,7 +999,7 @@
 
       // 이벤트 바인딩
       resetDataButton.addEventListener("click", resetUserData);
-      resetPromptButton.addEventListener("click", resetUserPrompt);
+      /*resetPromptButton.addEventListener("click", resetUserPrompt);*/
       sendButton.addEventListener("click", sendMessage);
       input.addEventListener("keypress", function (e) {
         if (e.key === "Enter" && !e.shiftKey) {
