@@ -42,27 +42,29 @@
       background-color: var(--background-color);
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
       margin: 0;
-      display: flex;
-      align-items: flex-start;
-      justify-content: center;
-      gap: 10px;
-      /* 간격 줄임 */
-      padding: 10px;
-      /* 패딩 줄임 */
+      padding: 20px;
+      position: relative;
       box-sizing: border-box;
-      overflow-y: auto;
       color: var(--text-color);
+      display: flex;
+      gap: 20px;
+      overflow: hidden;
+    }
+
+    /* Main Container */
+    .main-container {
+      display: flex;
+      width: 100%;
+      height: calc(100vh - 40px);
+      gap: 20px;
     }
 
     /* Chat Container Styles */
     .chat-container {
-      width: 100%;
-      max-width: 48%;
-      /* 화면을 더 채우도록 증가 */
-      height: calc(100vh - 20px);
-      /* 화면을 더 채우도록 높이 증가 */
+      width: 60%;
+      height: 100%;
       background-color: var(--background-color);
-      border-radius: 20px;
+      border-radius: 16px;
       box-shadow: 0 8px 24px var(--shadow-color);
       overflow: hidden;
       display: flex;
@@ -71,17 +73,16 @@
       position: relative;
     }
 
-    /* System Log도 같은 크기로 조정 */
+    /* System Log Styles */
     .system-log {
-      width: 100%;
-      max-width: 48%;
-      /* 화면을 더 채우도록 증가 */
-      height: calc(100vh - 20px);
-      /* 화면을 더 채우도록 높이 증가 */
+      width: 40%;
+      height: 100%;
       background-color: var(--card-background);
-      border-radius: 20px;
-      box-shadow: 0 8px 24px var(--shadow-color);
+      border-radius: 16px;
+      box-shadow: 0 4px 12px var(--shadow-color);
       overflow: hidden;
+      display: flex;
+      flex-direction: column;
       transition: all var(--transition-duration);
     }
 
@@ -117,6 +118,23 @@
       color: var(--primary-color);
     }
 
+    /* System Log Header Styles */
+    .system-log-header {
+      padding: 16px;
+      background-color: var(--user-message-bg);
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .system-log-header h3 {
+      margin: 0;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-color);
+    }
+
     /* Body Styles */
     .chat-body {
       flex: 1;
@@ -142,6 +160,34 @@
     .chat-body::-webkit-scrollbar-thumb {
       background-color: var(--scrollbar-color);
       border-radius: 4px;
+    }
+
+    /* System Log Body Styles */
+    .system-log-body {
+      padding: 16px;
+      height: 100%;
+      overflow-y: auto;
+      font-size: 13px;
+      line-height: 1.5;
+      color: var(--text-color);
+      background-color: var(--card-background);
+    }
+
+    .system-log-body::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    .system-log-body::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    .system-log-body::-webkit-scrollbar-thumb {
+      background-color: var(--border-color);
+      border-radius: 3px;
+    }
+
+    .system-log-body::-webkit-scrollbar-thumb:hover {
+      background-color: var(--secondary-color);
     }
 
     /* Message Styles */
@@ -195,10 +241,19 @@
 
     /* Input Section Styles */
     .chat-input {
-      padding: 15px;
-      border-top: 1px solid var(--border-color);
-      background-color: var(--input-bg);
-      /* 입력창 배경 */
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 90%;
+      max-width: 800px;
+      padding: 10px 15px;
+      background-color: rgba(60, 60, 60, 0.9);
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+      backdrop-filter: blur(10px);
+      border: 1px solid var(--border-color);
+      z-index: 1000;
       transition: background-color var(--transition-duration);
       position: relative;
     }
@@ -209,12 +264,12 @@
 
     .input-wrapper {
       display: flex;
+      gap: 8px;
       align-items: center;
-      gap: 10px;
-      background: var(--input-bg);
-      /* 입력창 배경 */
-      border-radius: 25px;
-      padding: 10px 15px;
+      background-color: rgba(68, 70, 84, 0.5);
+      border-radius: 12px;
+      padding: 4px 12px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
       box-shadow: 0 2px 4px var(--shadow-color);
       transition: all var(--transition-duration);
     }
@@ -231,8 +286,12 @@
       font-size: 15px;
       padding: 8px 0;
       color: var(--text-color) !important;
-      /* 일반 텍스트 색상 */
+      min-height: 24px;
+      max-height: 200px;
+      resize: none;
+      overflow-y: auto;
       transition: color var(--transition-duration);
+      line-height: 1.5;
     }
 
     .input-wrapper input::placeholder {
@@ -245,29 +304,31 @@
 
     .send-icon {
       cursor: pointer;
-      background: linear-gradient(135deg, #ffffff, #ffffff);
+      background: rgba(16, 163, 127, 0.9);
       border: none;
       border-radius: 50%;
-      width: 40px;
-      height: 40px;
+      width: 32px;
+      height: 32px;
       display: flex;
       align-items: center;
       justify-content: center;
-      color: #212121;
-      font-size: 16px;
-      transition: all var(--transition-duration);
-      box-shadow: 0 2px 8px rgba(74, 144, 226, 0.3);
+      color: white;
+      font-size: 14px;
+      transition: all 0.2s ease;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+      margin-left: 4px;
     }
 
     .send-icon:hover {
-      transform: scale(1.1) rotate(5deg);
-      box-shadow: 0 4px 12px rgba(74, 144, 226, 0.5);
-      background: linear-gradient(135deg, #5ba2f5, #4a90e2);
+      transform: scale(1.05);
+      background: rgba(16, 163, 127, 1);
+      box-shadow: 0 4px 12px rgba(16, 163, 127, 0.4);
     }
 
     .send-icon:active {
       transform: scale(0.95);
       transition: transform 0.1s;
+      background: rgba(13, 138, 108, 1);
     }
 
     /* 전송 중 애니메이션 */
@@ -289,47 +350,35 @@
 
     /* Floating Action Buttons - 채팅 입력창 아래 배치 */
     .floating-actions {
-      position: relative;
-      bottom: 0;
-      left: 0;
-      transform: none;
       display: flex;
-      gap: 15px;
-      z-index: 1000;
+      gap: 12px;
+      margin-top: 10px;
       justify-content: flex-start;
-      /* 왼쪽 정렬로 변경 */
       width: 100%;
-      padding: 15px 20px 0 20px;
+      padding: 0 12px;
       box-sizing: border-box;
     }
 
     .floating-btn {
-      padding: 8px 12px;
-      border: none;
-      border-radius: 20px;
-      font-size: 12px;
-      font-weight: 500;
-      cursor: pointer;
-      transition: all var(--transition-duration);
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-      backdrop-filter: blur(10px);
+      width: 40px;
+      height: 40px;
+      border-radius: 6px;
       border: 1px solid rgba(255, 255, 255, 0.1);
-      min-width: auto;
-      height: 36px;
+      background: rgba(32, 33, 35, 0.8);
+      color: rgba(255, 255, 255, 0.8);
+      font-size: 16px;
+      cursor: pointer;
+      transition: all 0.2s ease;
       display: flex;
       align-items: center;
       justify-content: center;
-      background-color: var(--input-bg);
-      /* 채팅창과 같은 배경색 */
-      color: #9ca3af;
-      /* 회색 아이콘 색상 */
+      opacity: 0.9;
     }
 
     .floating-btn:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
-      background-color: var(--user-message-bg);
-      /* 호버 시 약간 다른 색상 */
+      transform: translateY(-1px);
+      background: rgba(86, 88, 105, 0.7);
+      opacity: 1;
     }
 
     .floating-btn.primary {
@@ -382,18 +431,6 @@
     /* System Log Styles - 위에서 이미 정의됨 */
     .system-log:hover {
       box-shadow: 0 12px 32px var(--shadow-color);
-    }
-
-    .system-log-body {
-      padding: 20px;
-      height: calc(100% - 60px);
-      overflow-y: auto;
-      font-size: 13px;
-      color: var(--text-color);
-      scrollbar-width: thin;
-      scrollbar-color: var(--scrollbar-color) transparent;
-      background-color: var(--background-color);
-      /* ChatGPT 배경색 */
     }
 
     .system-log-body::-webkit-scrollbar {
