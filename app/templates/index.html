@@ -794,7 +794,19 @@
 
             for (let line of lines) {
               if (line.startsWith("data: ")) {
-                let content = line.slice(6);
+                let rawContent = line.slice(6); // "data: " 이후의 원시 데이터 추출
+                if (rawContent === "[DONE]") {
+                  // 스트림 종료 처리
+                  isDone = true;
+                } else {
+                  try {
+                    let content = JSON.parse(rawContent); // JSON 파싱
+                    partial += content; // 파싱된 내용을 누적
+                    // 이후 메시지 표시 로직 계속 진행
+                  } catch (error) {
+                    console.error("JSON 파싱 오류:", error); // 오류 발생 시 로그 출력
+                  }
+                }
                 if (content === "[DONE]") {
                   isDone = true;
                 } else if (content.startsWith("[참고한 문단]") || content.startsWith("[문단 ")) {
