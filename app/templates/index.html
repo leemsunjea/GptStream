@@ -724,12 +724,140 @@
       let lastBotDiv = null;
       let partial = "";
 
-      // 간단한 마크다운 파서 함수
+      // 개선된 마크다운 파서 함수 - 고급 HTML 처리 기능 강화
       function parseMarkdown(text) {
+        if (!text) return '';
+        
         let html = text;
-        html = html.replace(/\n\n+/g, '</p><p>');  // 단락 구분
-        html = html.replace(/\n/g, '<br>');        // 줄바꿈
-        return '<p>' + html + '</p>';
+        
+        // 1. 헤더 처리 (### Header -> <h3>Header</h3>)
+        html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
+        html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
+        html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>');
+        
+        // 2. 강조 처리
+        html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+        html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
+        
+        // 3. 인라인 코드 처리
+        html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+        
+        // 4. 목록 처리 (개선된 버전)
+        const lines = html.split('\n');
+        const processedLines = [];
+        let inList = false;
+        
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i].trim();
+          const listMatch = line.match(/^[-*]\s+(.+)/);
+          
+          if (listMatch) {
+            if (!inList) {
+              processedLines.push('<ul>');
+              inList = true;
+            }
+            processedLines.push(`<li>${listMatch[1]}</li>`);
+          } else {
+            if (inList) {
+              processedLines.push('</ul>');
+              inList = false;
+            }
+            processedLines.push(lines[i]);
+          }
+        }
+        
+        if (inList) {
+          processedLines.push('</ul>');
+        }
+        
+        html = processedLines.join('\n');
+        
+        // 5. 줄바꿈 처리 개선
+        // 먼저 연속된 줄바꿈을 단락으로 분리
+        html = html.replace(/\n\n+/g, '</p><p>');
+        
+        // 단일 줄바꿈은 <br>로 변환
+        html = html.replace(/\n/g, '<br>');
+        
+        // 6. 전체를 <p> 태그로 감싸기
+        if (!html.startsWith('<h') && !html.startsWith('<ul') && !html.startsWith('<ol')) {
+          html = '<p>' + html + '</p>';
+        }
+        
+        // 7. 빈 <p> 태그 제거
+        html = html.replace(/<p><\/p>/g, '');
+        html = html.replace(/<p>\s*<\/p>/g, '');
+        
+        return html;
+      }
+
+      // 고급 HTML 변환 함수 (서버 사이드 API 호출)
+      async function convertToAdvancedHTML(text) {
+        try {
+          const response = await fetch(`${API_BASE}/chat/convert_html`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ text: text })
+          });
+          
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+          }
+          
+          const result = await response.json();
+          
+          if (result.success) {
+            // 서버 사이드 HTML 변환 성공 시 통계 로그 출력
+            appendSystemLog(`[HTML 변환] 성공 - 태그: ${result.statistics.tag_count}개, 유사도: ${result.similarity_score}%`);
+            return result.html_content;
+          } else {
+            throw new Error(result.error || "변환 실패");
+          }
+          
+        } catch (error) {
+          console.warn("고급 HTML 변환 실패, 기본 파서 사용:", error);
+          appendSystemLog(`[HTML 변환] 서버 변환 실패, 클라이언트 변환 사용: ${error.message}`);
+          return parseMarkdown(text); // 폴백으로 기본 파서 사용
+        }
+      }
+
+      // HTML 구조 검증 함수
+      function validateHTMLStructure(htmlContent) {
+        const validation = {
+          isValid: true,
+          tagCount: 0,
+          errors: []
+        };
+        
+        try {
+          // 태그 개수 계산
+          const tags = htmlContent.match(/<[^>]+>/g) || [];
+          validation.tagCount = tags.length;
+          
+          // 기본적인 태그 균형 체크
+          const openingTags = htmlContent.match(/<([a-zA-Z][a-zA-Z0-9]*)/g) || [];
+          const closingTags = htmlContent.match(/<\/([a-zA-Z][a-zA-Z0-9]*)/g) || [];
+          
+          // 자체 닫는 태그 제외
+          const selfClosing = ['br', 'hr', 'img', 'input', 'meta', 'link'];
+          const filteredOpening = openingTags.filter(tag => {
+            const tagName = tag.replace('<', '').toLowerCase();
+            return !selfClosing.includes(tagName);
+          });
+          
+          if (filteredOpening.length !== closingTags.length) {
+            validation.isValid = false;
+            validation.errors.push("태그 균형이 맞지 않습니다");
+          }
+          
+        } catch (error) {
+          validation.isValid = false;
+          validation.errors.push(`검증 오류: ${error.message}`);
+        }
+        
+        return validation;
       }
 
       // 메시지 추가 함수
@@ -807,8 +935,21 @@
                     lastBotDiv.classList.add("message", "bot");
                     chatBox.appendChild(lastBotDiv);
                   }
-                  // 마크다운을 HTML로 변환해서 출력
-                  lastBotDiv.innerHTML = parseMarkdown(partial);
+                  
+                  // 고급 HTML 변환 사용 (일정 길이 이상일 때만 서버 변환 사용)
+                  if (partial.length > 100 && partial.includes('\n')) {
+                    // 서버 사이드 고급 변환 사용
+                    convertToAdvancedHTML(partial).then(htmlContent => {
+                      lastBotDiv.innerHTML = htmlContent;
+                    }).catch(() => {
+                      // 실패 시 기본 파서 사용
+                      lastBotDiv.innerHTML = parseMarkdown(partial);
+                    });
+                  } else {
+                    // 짧은 텍스트는 기본 클라이언트 파서 사용
+                    lastBotDiv.innerHTML = parseMarkdown(partial);
+                  }
+                  
                   console.log("수신 데이터:", partial);
                 }
                 chatBox.scrollTop = chatBox.scrollHeight;
@@ -1065,6 +1206,56 @@
           sendMessage();
         }
       });
+
+      // HTML 테스트 기능 추가
+      function testHTMLConversion() {
+        const testTexts = [
+          "안녕하세요!\n\n**Python**의 장점:\n- 간단한 문법\n- 풍부한 라이브러리\n- *크로스 플랫폼* 지원",
+          "## 웹 개발 가이드\n\n### Frontend\n- HTML/CSS\n- JavaScript\n\n### Backend\n- **FastAPI**\n- Flask",
+          "프로그래밍 학습 단계:\n\n1. 기초 문법\n2. 알고리즘\n3. 프로젝트 실습\n\n*꾸준한 연습*이 중요합니다!"
+        ];
+        
+        testTexts.forEach((text, index) => {
+          setTimeout(() => {
+            convertToAdvancedHTML(text).then(html => {
+              appendSystemLog(`[테스트 ${index + 1}] HTML 변환 완료`);
+              const validation = validateHTMLStructure(html);
+              appendSystemLog(`[테스트 ${index + 1}] 검증: ${validation.isValid ? '성공' : '실패'}, 태그: ${validation.tagCount}개`);
+            });
+          }, index * 1000);
+        });
+      }
+
+      // HTML 분석 및 통계 표시 기능
+      function analyzeHTMLQuality(originalText, htmlContent) {
+        const analysis = {
+          originalLength: originalText.length,
+          htmlLength: htmlContent.length,
+          tagCount: (htmlContent.match(/<[^>]+>/g) || []).length,
+          wordCount: originalText.split(/\s+/).length,
+          lineCount: originalText.split('\n').length
+        };
+        
+        // 분석 결과를 시스템 로그에 출력
+        appendSystemLog(`[HTML 분석] 원문: ${analysis.originalLength}자, HTML: ${analysis.htmlLength}자`);
+        appendSystemLog(`[HTML 분석] 태그: ${analysis.tagCount}개, 단어: ${analysis.wordCount}개, 줄: ${analysis.lineCount}개`);
+        
+        return analysis;
+      }
+
+      // 고급 HTML 기능 테스트 버튼 추가 (디버그용)
+      if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+        const testButton = document.createElement('button');
+        testButton.textContent = 'HTML 테스트';
+        testButton.className = 'floating-btn secondary';
+        testButton.style.marginLeft = '10px';
+        testButton.onclick = testHTMLConversion;
+        
+        const floatingActions = document.querySelector('.floating-actions');
+        if (floatingActions) {
+          floatingActions.appendChild(testButton);
+        }
+      }
     });
   </script>
   <script>
@@ -1139,6 +1330,231 @@
         }
       });
     });
+
+    // ========================================================================================
+    // HTML 테스트 패널 기능 - 독립 시스템에서 통합
+    // ========================================================================================
+    
+    // HTML 테스트 패널 토글 함수
+    function toggleHtmlTestPanel() {
+      const panel = document.getElementById('html-test-panel');
+      if (!panel) {
+        createHtmlTestPanel();
+      } else {
+        panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+      }
+    }
+    
+    // HTML 테스트 패널 생성
+    function createHtmlTestPanel() {
+      const panel = document.createElement('div');
+      panel.id = 'html-test-panel';
+      panel.style.cssText = `
+        position: fixed;
+        top: 10px;
+        right: 10px;
+        width: 500px;
+        height: 600px;
+        background: var(--card-background);
+        border: 1px solid var(--border-color);
+        border-radius: 10px;
+        padding: 20px;
+        box-shadow: 0 4px 20px var(--shadow-color);
+        z-index: 1000;
+        color: var(--text-color);
+        overflow-y: auto;
+      `;
+      
+      panel.innerHTML = `
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+          <h3 style="margin: 0; color: var(--text-color-bright);">🤖 HTML 변환 테스트</h3>
+          <button onclick="toggleHtmlTestPanel()" style="background: none; border: none; color: var(--text-color); font-size: 18px; cursor: pointer;">✕</button>
+        </div>
+        
+        <div style="margin-bottom: 15px;">
+          <label style="display: block; margin-bottom: 5px; font-weight: bold;">입력 텍스트:</label>
+          <textarea id="html-test-input" style="width: 100%; height: 120px; padding: 10px; background: var(--input-bg); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 5px; resize: vertical;" placeholder="변환할 텍스트를 입력하세요...">안녕하세요!
+
+Python 프로그래밍의 장점:
+- **간단한 문법**: 읽기 쉽고 이해하기 쉬운 코드
+- *풍부한 라이브러리*: 다양한 목적에 맞는 라이브러리
+
+## 활용 분야
+- 웹 개발
+- 데이터 과학
+
+궁금한 점이 있으시면 언제든 물어보세요!</textarea>
+        </div>
+        
+        <div style="margin-bottom: 15px;">
+          <button onclick="convertTextToHtml()" style="background: #3498db; color: white; border: none; padding: 8px 16px; border-radius: 5px; cursor: pointer; margin-right: 10px;">🚀 HTML 변환</button>
+          <button onclick="loadHtmlSample()" style="background: #95a5a6; color: white; border: none; padding: 8px 16px; border-radius: 5px; cursor: pointer;">📝 샘플 로드</button>
+        </div>
+        
+        <div style="margin-bottom: 15px;">
+          <label style="display: block; margin-bottom: 5px; font-weight: bold;">변환된 HTML:</label>
+          <div id="html-test-output" style="background: var(--code-bg); color: var(--text-color-bright); padding: 10px; border-radius: 5px; font-family: monospace; font-size: 12px; max-height: 150px; overflow-y: auto; white-space: pre-wrap;">HTML 출력이 여기에 표시됩니다...</div>
+        </div>
+        
+        <div style="margin-bottom: 15px;">
+          <label style="display: block; margin-bottom: 5px; font-weight: bold;">렌더링 미리보기:</label>
+          <div id="html-test-preview" style="background: white; color: black; padding: 15px; border-radius: 5px; max-height: 150px; overflow-y: auto; border: 1px solid var(--border-color);">렌더링 결과가 여기에 표시됩니다...</div>
+        </div>
+        
+        <div>
+          <label style="display: block; margin-bottom: 5px; font-weight: bold;">검증 결과:</label>
+          <div id="html-test-validation" style="background: var(--input-bg); padding: 10px; border-radius: 5px; font-size: 12px; max-height: 100px; overflow-y: auto;">검증 결과가 여기에 표시됩니다...</div>
+        </div>
+      `;
+      
+      document.body.appendChild(panel);
+    }
+    
+    // HTML 변환 함수
+    async function convertTextToHtml() {
+      const input = document.getElementById('html-test-input');
+      const output = document.getElementById('html-test-output');
+      const preview = document.getElementById('html-test-preview');
+      const validation = document.getElementById('html-test-validation');
+      
+      const textContent = input.value.trim();
+      
+      if (!textContent) {
+        alert('변환할 텍스트를 입력해주세요.');
+        return;
+      }
+      
+      try {
+        const response = await fetch('/chat/convert_html', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ text: textContent })
+        });
+        
+        if (!response.ok) {
+          throw new Error('서버 응답 오류');
+        }
+        
+        const result = await response.json();
+        
+        if (result.success) {
+          // HTML 코드 표시
+          output.textContent = result.html_result;
+          
+          // 렌더링 미리보기
+          preview.innerHTML = result.html_result;
+          
+          // 검증 결과 표시
+          const validationInfo = result.validation;
+          const stats = result.stats;
+          
+          let validationHtml = `
+            <div style="margin-bottom: 10px;">
+              <strong>📊 통계:</strong><br>
+              • 원본 길이: ${stats.original_length}자<br>
+              • HTML 길이: ${stats.html_length}자<br>
+              • 태그 수: ${stats.tag_count}개<br>
+              • 유사도: ${stats.similarity_score}%
+            </div>
+            <div>
+              <strong>✅ 검증:</strong><br>
+              • 구조 유효: ${validationInfo.valid ? '통과' : '실패'}<br>
+              • 태그 균형: ${validationInfo.balanced ? '균형' : '불균형'}<br>
+              • 오류: ${validationInfo.errors.length}개<br>
+              • 경고: ${validationInfo.warnings.length}개
+            </div>
+          `;
+          
+          if (validationInfo.errors.length > 0) {
+            validationHtml += `<div style="color: #e74c3c; margin-top: 5px;"><strong>오류:</strong><br>${validationInfo.errors.join('<br>')}</div>`;
+          }
+          
+          if (validationInfo.warnings.length > 0) {
+            validationHtml += `<div style="color: #f39c12; margin-top: 5px;"><strong>경고:</strong><br>${validationInfo.warnings.join('<br>')}</div>`;
+          }
+          
+          validation.innerHTML = validationHtml;
+          
+        } else {
+          throw new Error(result.error || '변환 실패');
+        }
+        
+      } catch (error) {
+        console.error('HTML 변환 오류:', error);
+        output.textContent = `오류: ${error.message}`;
+        preview.innerHTML = `<div style="color: red;">변환 오류가 발생했습니다.</div>`;
+        validation.innerHTML = `<div style="color: red;">오류: ${error.message}</div>`;
+      }
+    }
+    
+    // 샘플 텍스트 로드 함수
+    function loadHtmlSample() {
+      const samples = [
+        `안녕하세요!
+
+Python 프로그래밍의 장점:
+- **간단한 문법**: 읽기 쉽고 이해하기 쉬운 코드
+- *풍부한 라이브러리*: 다양한 목적에 맞는 라이브러리
+
+## 활용 분야
+- 웹 개발
+- 데이터 과학
+
+궁금한 점이 있으시면 언제든 물어보세요!`,
+
+        `# FastAPI vs Flask 비교
+
+## 성능
+**FastAPI**는 *Starlette*과 *Pydantic*을 기반으로 합니다.
+
+### 주요 차이점
+- FastAPI: 비동기 처리 지원
+- Flask: 동기 처리 기본
+
+**결론**: 프로젝트 요구사항에 따라 선택하세요.`,
+
+        `웹 개발 학습 로드맵:
+
+### 프론트엔드
+- **HTML/CSS**: 웹 페이지 구조와 스타일
+- **JavaScript**: 동적 기능 구현
+- *React/Vue*: 프레임워크 활용
+
+### 백엔드  
+- **Python**: Django, FastAPI
+- **Database**: MySQL, PostgreSQL
+- **배포**: Docker, AWS
+
+*꾸준한 연습*이 가장 중요합니다!`
+      ];
+      
+      const randomSample = samples[Math.floor(Math.random() * samples.length)];
+      document.getElementById('html-test-input').value = randomSample;
+    }
+    
+    // HTML 테스트 패널 토글 버튼을 헤더에 추가
+    window.addEventListener('DOMContentLoaded', function() {
+      const chatHeader = document.querySelector('.chat-header');
+      if (chatHeader) {
+        const testButton = document.createElement('button');
+        testButton.innerHTML = '🧪 HTML 테스트';
+        testButton.style.cssText = `
+          background: #3498db;
+          color: white;
+          border: none;
+          padding: 8px 12px;
+          border-radius: 5px;
+          cursor: pointer;
+          font-size: 12px;
+          margin-left: 10px;
+        `;
+        testButton.onclick = toggleHtmlTestPanel;
+        chatHeader.appendChild(testButton);
+      }
+    });
+    
   </script>
 </body>
 
