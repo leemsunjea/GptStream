@@ -791,39 +791,38 @@
             buffer += decoder.decode(value, { stream: true });
             const lines = buffer.split("\n");
             buffer = lines.pop(); // 마지막 미완성 줄을 버퍼로 유지
-
             for (let line of lines) {
               if (line.startsWith("data: ")) {
-                let rawContent = line.slice(6); // "data: " 이후의 원시 데이터 추출
+                let rawContent = line.slice(6).trim(); // "data: " 이후의 원시 데이터 추출 및 공백 제거
                 if (rawContent === "[DONE]") {
                   // 스트림 종료 처리
                   isDone = true;
                 } else {
                   try {
                     let content = JSON.parse(rawContent); // JSON 파싱
-                    partial += content; // 파싱된 내용을 누적
-                    // 이후 메시지 표시 로직 계속 진행
+                    if (typeof content === "string") {
+                      if (content.startsWith("[참고한 문단]") || content.startsWith("[문단 ")) {
+                        references += content + "\n";
+                        appendSystemLog(content); // 시스템 로그에 출력
+                      } else {
+                        partial += content; // 메시지 내용 누적
+                        if (!lastBotDiv) {
+                          lastBotDiv = document.createElement("div");
+                          lastBotDiv.classList.add("message", "bot");
+                          chatBox.appendChild(lastBotDiv);
+                        }
+                        // 마크다운을 HTML로 변환해서 출력
+                        lastBotDiv.innerHTML = parseMarkdown(partial);
+                        console.log("수신 데이터:", partial);
+                      }
+                    } else {
+                      console.warn("예상치 못한 데이터 형식:", content);
+                    }
                   } catch (error) {
                     console.error("JSON 파싱 오류:", error); // 오류 발생 시 로그 출력
                   }
                 }
-                if (content === "[DONE]") {
-                  isDone = true;
-                } else if (content.startsWith("[참고한 문단]") || content.startsWith("[문단 ")) {
-                  references += content + "\n";
-                  appendSystemLog(content); // 시스템 로그에 출력
-                } else if (!isDone) {
-                  partial += content;
-                  if (!lastBotDiv) {
-                    lastBotDiv = document.createElement("div");
-                    lastBotDiv.classList.add("message", "bot");
-                    chatBox.appendChild(lastBotDiv);
-                  }
-                  // 마크다운을 HTML로 변환해서 출력
-                  lastBotDiv.innerHTML = parseMarkdown(partial);
-                  console.log("수신 데이터:", partial);
-                }
-                chatBox.scrollTop = chatBox.scrollHeight;
+                chatBox.scrollTop = chatBox.scrollHeight; // 스크롤을 최하단으로 이동
               }
             }
           }
