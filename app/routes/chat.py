@@ -1,158 +1,54 @@
 # app/routes/chat.py
 
 import asyncio
-from fastapi import APIRouter, Request, Header, HTTPException # HTTPException 추가
-from fastapi.responses import StreamingResponse, JSONResponse # JSONResponse 추가
-import openai
-from app.config import settings
-from db.models import ChatHistory, UserPreference # UserPreference 임포트 추가
-from db.database import async_session
-from app.vector_db import get_embedding_async as get_embedding, index, doc_store, search_similar_documents, search_recent_documents_first # search_recent_documents_first 추가
+import traceback
+from fastapi import APIRouter, Request, Header, HTTPException
+from fastapi.responses import StreamingResponse, JSONResponse
 from openai import OpenAI
-from sqlalchemy import func, select, delete # delete 추가
-from db.models import UserPreference, ChatHistory # ChatHistory 임포트 추가
-import traceback
-from sqlalchemy import func, select, delete # delete 추가
-from db.models import UserPreference, ChatHistory # ChatHistory 임포트 추가
-import traceback
+from sqlalchemy import func, select
 
-from app.vector_db import task_statuses
+from app.config import settings
+from db.models import ChatHistory, UserPreference
+from db.database import async_session
+from app.vector_db import index, search_similar_documents, search_recent_documents_first
 
 router = APIRouter()
-
-openai.api_key = settings.OPENAI_API_KEY
 client = OpenAI(api_key=settings.OPENAI_API_KEY)
 
-# Global cache for default system prompt
-_default_system_prompt_cache = None
+# 간소화된 포맷팅 규칙
+FORMATTING_RULE = "답변 시 문장 끝에 줄바꿈을 사용하여 가독성을 높여주세요."
 
 # ========================================================================================
-# 줄바꿈 포맷팅 규칙 - 시스템 프롬프트용 상수
-# ========================================================================================
-
-FORMATTING_RULES_SYSTEM_PROMPT = """=== 필수 응답 형식 규칙 ===
-
-**중요: 다음 줄바꿈 규칙을 반드시 준수하세요**
-
-1. 문장이 끝날 때마다 \\n을 추가하세요
-2. 새로운 단락 시작 시 \\n\\n을 사용하세요
-3. 목록 항목 끝에 \\n을 추가하세요
-4. 제목/헤더 뒤에 \\n\\n을 추가하세요
-5. 긴 텍스트를 줄바꿈 없이 연속 작성하지 마세요
-
-**올바른 예시:**
-"안녕하세요.\\n도움이 필요하시군요.\\n\\n저는 AI 어시스턴트입니다.\\n무엇을 도와드릴까요?"
-
-**잘못된 예시:**
-"안녕하세요. 도움이 필요하시군요. 저는 AI 어시스턴트입니다. 무엇을 도와드릴까요?"
-
-이 규칙을 지키지 않으면 텍스트가 읽기 어려운 형태로 표시됩니다."""
-
-# ========================================================================================
-# OpenAI 메시지 구조 구성 함수들 - 완전히 새로운 설계
+# 메시지 구성 함수들
 # ========================================================================================
 
 def build_system_message(user_role: str = None, reference_docs: str = None) -> str:
     """시스템 메시지를 구성합니다."""
+    base_role = user_role or "당신은 친절하고 도움이 되는 AI 어시스턴트입니다."
     
-    # 기본 역할 설정
-    base_role = user_role or "당신은 친절하고 도움이 되는 AI 어시스턴트입니다. 사용자의 질문에 정확하고 유용한 답변을 제공해주세요."
+    components = [f"역할: {base_role}"]
     
-    # 시스템 메시지 구성 요소들
-    system_components = []
-    
-    # 1. 기본 역할 정의
-    system_components.append(f"=== AI 어시스턴트 역할 ===\n{base_role}")
-    
-    # 2. 참조 문서 (있는 경우)
     if reference_docs:
-        system_components.append(f"=== 참조 문서 내용 ===\n{reference_docs}")
+        components.append(f"참조 문서:\n{reference_docs}")
     
-    # 3. 필수 응답 형식 규칙 (항상 포함) - 별도 상수 사용
-    system_components.append(FORMATTING_RULES_SYSTEM_PROMPT)
+    components.append(FORMATTING_RULE)
     
-    return "\n\n".join(system_components)
+    return "\n\n".join(components)
 
-def build_conversation_messages(chat_history: list) -> list:
-    """대화 기록을 OpenAI 메시지 형식으로 변환합니다."""
-    messages = []
+def build_messages(system_msg: str, chat_history: list, current_message: str) -> list:
+    """OpenAI API용 메시지 리스트를 구성합니다."""
+    messages = [{"role": "system", "content": system_msg}]
     
-    for chat_entry in chat_history:
-        # 사용자 메시지 추가
-        messages.append({
-            "role": "user", 
-            "content": chat_entry.user_message
-        })
-        
-        # 어시스턴트 응답 추가 (있는 경우)
-        if chat_entry.bot_response:
-            messages.append({
-                "role": "assistant", 
-                "content": chat_entry.bot_response
-            })
+    # 대화 기록 추가
+    for chat in chat_history:
+        messages.append({"role": "user", "content": chat.user_message})
+        if chat.bot_response:
+            messages.append({"role": "assistant", "content": chat.bot_response})
+    
+    # 현재 메시지 추가
+    messages.append({"role": "user", "content": current_message})
     
     return messages
-
-def build_openai_message_structure(system_message: str, conversation_history: list, current_user_message: str) -> list:
-    """
-    최종 OpenAI API 메시지 구조를 구성합니다.
-    
-    구조:
-    [
-        {"role": "system", "content": "시스템 지시 프롬프트"},
-        {"role": "user", "content": "이전 사용자 입력 1"},
-        {"role": "assistant", "content": "이전 GPT 응답 1 (선택 사항)"},
-        {"role": "user", "content": "이전 사용자 입력 2"},
-        {"role": "assistant", "content": "이전 GPT 응답 2 (선택 사항)"},
-        ...
-        {"role": "user", "content": "현재 사용자 입력"}
-    ]
-    """
-    messages = []
-    
-    # 1. 시스템 메시지 (항상 첫 번째)
-    messages.append({
-        "role": "system",
-        "content": system_message
-    })
-    
-    # 2. 이전 대화 기록 추가 (시간순)
-    messages.extend(conversation_history)
-    
-    # 3. 현재 사용자 메시지 추가 (마지막)
-    messages.append({
-        "role": "user",
-        "content": current_user_message
-    })
-    
-    return messages
-
-def validate_message_structure(messages: list) -> bool:
-    """메시지 구조가 올바른지 검증합니다."""
-    if not messages:
-        return False
-    
-    # 첫 번째 메시지는 반드시 system이어야 함
-    if messages[0].get("role") != "system":
-        return False
-    
-    # 마지막 메시지는 반드시 user여야 함
-    if messages[-1].get("role") != "user":
-        return False
-    
-    # 모든 메시지에 role과 content가 있는지 확인
-    for msg in messages:
-        if "role" not in msg or "content" not in msg:
-            return False
-        if msg["role"] not in ["system", "user", "assistant"]:
-            return False
-        if not isinstance(msg["content"], str) or not msg["content"].strip():
-            return False
-    
-    return True
-
-# 기존 템플릿 제거하고 새로운 구조 사용
-# BASE_SYSTEM_PROMPT_TEMPLATE 제거
 
 @router.post("/stream")
 async def chat_stream(request: Request, x_user_id: str = Header(..., description="클라이언트 UUID")):
@@ -194,22 +90,12 @@ async def chat_stream(request: Request, x_user_id: str = Header(..., description
     referenced_docs_for_response_display = []
     recommended_response_style = ""
     
-    # 키워드 감지
-    recent_doc_keywords = [
-        "방금 업로드", "최근 업로드", "업로드한 문서", "내가 올린", "방금 올린", "최근에 올린",
-        "방금 등록", "최근 등록", "등록한 문서", "방금 추가", "최근 추가", "추가한 문서",
-        "방금 저장", "최근 저장", "저장한 문서", "새로 올린", "새로 업로드", "새 문서",
-        "요약해", "정리해", "설명해", "알려줘", "뭐가 있어", "어떤 내용"
-    ]
+    # 간소화된 키워드 감지
+    recent_keywords = ["방금", "최근", "업로드", "요약해", "정리해", "설명해"]
+    toc_keywords = ["목차", "차례", "구성", "전체", "구조"]
     
-    table_of_contents_keywords = [
-        "목차", "차례", "목록", "구성", "내용", "인덱스", "개요", "구조",
-        "table of contents", "contents", "index", "outline", "structure",
-        "전체", "모든", "다 알려", "전부", "리스트", "항목"
-    ]
-    
-    is_recent_doc_query = any(keyword in message for keyword in recent_doc_keywords)
-    is_toc_query = any(keyword in message for keyword in table_of_contents_keywords)
+    is_recent_doc_query = any(keyword in message for keyword in recent_keywords)
+    is_toc_query = any(keyword in message for keyword in toc_keywords)
     
     if index.ntotal > 0:
         print(f"[DEBUG] FAISS 인덱스에 {index.ntotal}개 벡터 로드됨. 문서 검색 시작...")
@@ -284,26 +170,13 @@ async def chat_stream(request: Request, x_user_id: str = Header(..., description
         reference_docs=reference_document_content
     )
 
-    # 5. 대화 기록을 OpenAI 메시지 형식으로 변환
-    conversation_messages = build_conversation_messages(chat_history)
-
-    # 6. 최종 OpenAI 메시지 구조 구성
-    messages_to_send_to_openai = build_openai_message_structure(
-        system_message=system_message,
-        conversation_history=conversation_messages,
-        current_user_message=message
-    )
-
-    # 7. 메시지 구조 검증
-    if not validate_message_structure(messages_to_send_to_openai):
-        print(f"[ERROR] 메시지 구조 검증 실패")
-        raise HTTPException(status_code=500, detail="메시지 구조 구성 오류")
+    # 5. 최종 OpenAI 메시지 구조 구성
+    messages_to_send_to_openai = build_messages(system_message, chat_history, message)
 
     print(f"[DEBUG] OpenAI 메시지 구조 구성 완료 - 총 {len(messages_to_send_to_openai)}개 메시지")
     print(f"[DEBUG] 시스템 메시지 길이: {len(system_message)} 문자")
-    print(f"[DEBUG] 대화 기록: {len(conversation_messages)}개 메시지")
 
-    # 8. OpenAI API 스트리밍 실행
+    # 6. OpenAI API 스트리밍 실행
     async def event_stream():
         full_response_content = ""
         buffer = ""
@@ -415,11 +288,11 @@ async def reset_user_prompt(x_user_id: str = Header(..., description="클라이�
                 )
 
 @router.post("/add_prompt")
-async def add_user_prompt(request: Request, x_user_id: str = Header(..., description="클라이언트 UUID")): # x_user_id 추가
+async def add_user_prompt(request: Request, x_user_id: str = Header(..., description="클라이언트 UUID")):
     data = await request.json()
-    new_prompt_text = data.get("prompt", "") # 변수명 변경 new_prompt -> new_prompt_text
+    new_prompt_text = data.get("prompt", "")
 
-    if not new_prompt_text: # 변수명 변경 new_prompt -> new_prompt_text
+    if not new_prompt_text:
         return {"error": "프롬프트가 비어 있습니다."}
 
     async with async_session() as session:
@@ -433,7 +306,7 @@ async def add_user_prompt(request: Request, x_user_id: str = Header(..., descrip
             # 기존 프롬프트 업데이트
             previous_prompt = user_pref.system_prompt
             user_pref.system_prompt = new_prompt_text
-            user_pref.updated_at = func.now() # 업데이트 시간 기록
+            user_pref.updated_at = func.now()
             print(f"[DEBUG] 사용자 {x_user_id}의 프롬프트 업데이트: '{previous_prompt}' -> '{new_prompt_text}'")
         else:
             # 새 프롬프트 생성
@@ -442,6 +315,6 @@ async def add_user_prompt(request: Request, x_user_id: str = Header(..., descrip
             print(f"[DEBUG] 사용자 {x_user_id}의 새 프롬프트 생성: '{new_prompt_text}'")
         
         await session.commit()
-        await session.refresh(user_pref) # DB에서 최신 정보로 객체 업데이트
+        await session.refresh(user_pref)
 
-    return {"success": True, "new_system_prompt": user_pref.system_prompt} # 반환값 키 변경 및 값 수정
+    return {"success": True, "new_system_prompt": user_pref.system_prompt}

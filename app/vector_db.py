@@ -1,77 +1,66 @@
 # app/vector_db.py
+
 import os
 import faiss
 import numpy as np
-import aiohttp # aiohttp 임포트 추가
-from dotenv import load_dotenv
-from db.database import async_session
-from sqlalchemy import select, text # sqlalchemy 임포트 확인
-from db.models import documents, embeddings
-from app.config import settings
-from openai import OpenAI
-from typing import Optional
 import asyncio
 import fitz
+from openai import OpenAI
+from sqlalchemy import select
+from db.database import async_session
+from db.models import documents, embeddings
+from app.config import settings
+from typing import Optional, List, Dict, Any
 
-load_dotenv()
 client = OpenAI(api_key=settings.OPENAI_API_KEY)
 
+# 전역 변수
 dimension = 1536
 index = faiss.IndexFlatL2(dimension)
-doc_store = []  # 전역 변수로 선언된 문서 저장소
-
-# Define task_statuses here to avoid circular import issues
+doc_store = []
 task_statuses = {}
 
 async def load_faiss_and_docstore():
+    """FAISS 인덱스와 문서 저장소를 로드"""
     global doc_store, index
-    print("[INFO] load_faiss_and_docstore: FAISS 인덱스 및 문서 저장소 로드 시작...")
+    print("[INFO] FAISS 인덱스 및 문서 저장소 로드 시작...")
+    
     new_doc_store = []
     embedding_vectors = []
 
     async with async_session() as session:
-        # 모든 문서 및 해당 user_id, title, summary, response_style, created_at, pdf_name 가져오기
-        stmt_docs = select(
-            documents.c.id, 
-            documents.c.user_id, 
-            documents.c.content,
-            documents.c.title,
-            documents.c.summary,
-            documents.c.response_style,
-            documents.c.created_at,
-            documents.c.pdf_name
+        # 모든 문서 조회
+        stmt = select(
+            documents.c.id, documents.c.user_id, documents.c.content,
+            documents.c.title, documents.c.summary, documents.c.response_style,
+            documents.c.created_at, documents.c.pdf_name
         ).order_by(documents.c.id)
-        result_docs = await session.execute(stmt_docs)
-        all_db_documents = result_docs.fetchall()
+        
+        result = await session.execute(stmt)
+        all_documents = result.fetchall()
 
-        print(f"[INFO] load_faiss_and_docstore: DB에서 {len(all_db_documents)}개의 문서 로드 완료.")
-        if not all_db_documents:
-            print("[INFO] load_faiss_and_docstore: 데이터베이스에 문서가 없습니다. doc_store와 index를 초기화합니다.")
+        if not all_documents:
+            print("[INFO] 데이터베이스에 문서가 없습니다.")
             doc_store = []
-            if index.ntotal > 0: # 문서가 없고 인덱스에 데이터가 남아있다면 인덱스 초기화
-                index.reset()
-                print("[INFO] load_faiss_and_docstore: 기존 FAISS 인덱스 초기화 완료.")
-            return index, doc_store
+            index.reset()
+            return
 
-        # 각 문서에 대해 문단으로 분할하고 해당 임베딩 가져오기
-        for doc_id, user_id, page_content, title, summary, response_style, created_at, pdf_name in all_db_documents:
-            print(f"[DEBUG] load_faiss_and_docstore: 문서 처리 중 - doc_id: {doc_id}, user_id: {user_id}, title: {title}")
-            if not page_content: # 페이지 내용이 비어있다면 건너뜀
-                print(f"[DEBUG] load_faiss_and_docstore: doc_id {doc_id} (user_id: {user_id})은(는) 페이지 내용이 비어있어 건너뜁니다.")
+        # 각 문서 처리
+        for doc_id, user_id, content, title, summary, response_style, created_at, pdf_name in all_documents:
+            if not content:
                 continue
-            paragraphs = split_text_to_paragraphs(page_content)
+                
+            paragraphs = split_text_to_paragraphs(content)
+            
+            # 임베딩 조회
+            emb_stmt = select(embeddings.c.embedding).where(embeddings.c.document_id == doc_id)
+            emb_result = await session.execute(emb_stmt)
+            emb_data = [row[0] for row in emb_result.fetchall()]
 
-            # 문단에 대한 임베딩 가져오기
-            stmt_embs = select(embeddings.c.embedding).where(embeddings.c.document_id == doc_id).order_by(embeddings.c.id)
-            result_embs = await session.execute(stmt_embs)
-            paragraph_embeddings_bytes = [row[0] for row in result_embs.fetchall()]
-
-            print(f"[DEBUG] load_faiss_and_docstore: doc_id {doc_id} (user_id: {user_id}) - 문단 수: {len(paragraphs)}, DB 임베딩 수: {len(paragraph_embeddings_bytes)}")
-
-            if len(paragraphs) != len(paragraph_embeddings_bytes):
-                print(f"[WARNING] load_faiss_and_docstore: doc_id {doc_id} (user_id: {user_id})에 대해 문단 수({len(paragraphs)})와 임베딩 수({len(paragraph_embeddings_bytes)}) 불일치. 해당 문서는 건너뜁니다.")
+            if len(paragraphs) != len(emb_data):
                 continue
 
+            # 문서 저장소에 추가
             for i, para_text in enumerate(paragraphs):
                 new_doc_store.append({
                     'text': para_text,
@@ -80,229 +69,197 @@ async def load_faiss_and_docstore():
                     'title': title,
                     'summary': summary,
                     'response_style': response_style,
-                    'created_at': created_at.isoformat() if created_at else None, # ISO 형식으로 변환
+                    'created_at': created_at.isoformat() if created_at else None,
                     'pdf_name': pdf_name
                 })
-                embedding_bytes = paragraph_embeddings_bytes[i]
-                embedding_vectors.append(np.frombuffer(embedding_bytes, dtype=np.float32))
+                embedding_vectors.append(np.frombuffer(emb_data[i], dtype=np.float32))
 
+    # 인덱스 업데이트
     if new_doc_store and embedding_vectors:
-        doc_store = new_doc_store # 전역 doc_store에 할당
-        print(f"[INFO] load_faiss_and_docstore: 전역 doc_store 업데이트 완료. 총 {len(doc_store)}개 항목.")
-        if doc_store:
-            print(f"[DEBUG] load_faiss_and_docstore: 업데이트된 doc_store의 첫 번째 항목: user_id={doc_store[0].get('user_id')}, doc_id={doc_store[0].get('doc_id')}, title='{doc_store[0].get('title')}', text='{doc_store[0].get('text', '')[:30]}...'")
-
-        index.reset() # 기존 인덱스 초기화
-        print(f"[INFO] load_faiss_and_docstore: FAISS 인덱스 초기화 완료. 추가할 벡터 수: {len(embedding_vectors)}")
+        doc_store = new_doc_store
+        index.reset()
         index.add(np.stack(embedding_vectors))
-        print(f"[INFO] load_faiss_and_docstore: FAISS 인덱스에 {index.ntotal} 벡터 로드 완료. 문서 저장소 크기: {len(doc_store)}")
+        print(f"[INFO] FAISS 인덱스 로드 완료: {index.ntotal}개 벡터")
     else:
         doc_store = []
-        if index.ntotal > 0:
-            index.reset()
-        print("[INFO] load_faiss_and_docstore: FAISS 인덱스에 임베딩이 로드되지 않았습니다. new_doc_store 또는 embedding_vectors가 비어있습니다. doc_store와 index를 초기화합니다.")
-
-    return index, doc_store
+        index.reset()
+        print("[INFO] 인덱스 초기화 완료")
 
 async def get_embedding_async(text: str) -> Optional[np.ndarray]:
+    """텍스트의 임베딩 생성"""
     try:
         response = await asyncio.get_event_loop().run_in_executor(
             None,
             lambda: client.embeddings.create(input=text, model="text-embedding-ada-002")
         )
-        embedding = np.array(response.data[0].embedding, dtype='float32')
-        print(f"[DEBUG] 생성된 임베딩 데이터: {embedding[:5]}")  # 일부 데이터 출력
-        return embedding
+        return np.array(response.data[0].embedding, dtype='float32')
     except Exception as e:
-        print(f"[ERROR] 임베딩 생성 중 오류 발생: {e}")
+        print(f"[ERROR] 임베딩 생성 실패: {e}")
         return None
 
-def split_text_to_paragraphs(text: str) -> list:
-    """
-    텍스트를 문단으로 분리하되, 목차와 같은 구조적 정보를 보존하는 개선된 로직
-    """
+def split_text_to_paragraphs(text: str) -> List[str]:
+    """텍스트를 문단으로 분할"""
     paragraphs = []
-    
-    # 먼저 기본 문단 분리
     basic_paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
     
     for paragraph in basic_paragraphs:
-        # 목차 관련 패턴 감지
-        is_table_of_contents = any(keyword in paragraph.lower() for keyword in [
-            "목차", "차례", "table of contents", "contents", "index"
-        ])
+        # 목차 관련 내용은 보존
+        is_toc = any(keyword in paragraph.lower() for keyword in ["목차", "차례", "contents"])
         
-        # 긴 문단을 더 작은 단위로 분리 (단, 목차는 보존)
-        if len(paragraph) > 1000 and not is_table_of_contents:
-            # 문장 단위로 분리하되 너무 작지 않게
+        if len(paragraph) > 1000 and not is_toc:
+            # 긴 문단 분할
             sentences = paragraph.split('. ')
-            current_chunk = ""
-            
+            chunk = ""
             for sentence in sentences:
-                if len(current_chunk + sentence) < 800:
-                    current_chunk += sentence + ". "
+                if len(chunk + sentence) < 800:
+                    chunk += sentence + ". "
                 else:
-                    if current_chunk.strip():
-                        paragraphs.append(current_chunk.strip())
-                    current_chunk = sentence + ". "
-            
-            if current_chunk.strip():
-                paragraphs.append(current_chunk.strip())
+                    if chunk.strip():
+                        paragraphs.append(chunk.strip())
+                    chunk = sentence + ". "
+            if chunk.strip():
+                paragraphs.append(chunk.strip())
         else:
             paragraphs.append(paragraph)
     
     return paragraphs
 
-async def pollTaskStatus(task_id, api_base, append_system_log):
-
-    while True:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(f"{api_base}/task_status/{task_id}") as response:
-                result = await response.json()
-                print("Task 상태:", result)  # 디버깅 로그 추가
-                if result.get("logs") and isinstance(result["logs"], list):
-                    for msg in result["logs"]:
-                        append_system_log(msg)
-                # HTTP 404 오류 처리 추가
-                if response.status == 404:
-                    append_system_log(f"작업 상태 확인 오류 (HTTP 404) - Task ID: {task_id}")  # Task ID 전체 출력
-                    return
-        await asyncio.sleep(5)  # 5초마다 상태 확인
-
-async def search_similar_documents(message: str, user_id: str): # user_id 매개변수 추가
-    print(f"[INFO] search_similar_documents: 검색 시작 - 사용자: {user_id}, 메시지: '{message[:50]}...'")
+async def search_similar_documents(message: str, user_id: str) -> List[Dict[str, Any]]:
+    """유사 문서 검색"""
     if index.ntotal == 0:
-        print(f"[DEBUG] search_similar_documents: 인덱스가 비어 있습니다 (index.ntotal: {index.ntotal}). 사용자 {user_id}에 대한 검색 문서가 없습니다.")
         return []
 
-    # 목차 관련 키워드 확장 검색
-    table_of_contents_keywords = ["목차", "차례", "목록", "인덱스", "구성", "내용"]
-    is_toc_query = any(keyword in message for keyword in table_of_contents_keywords)
-    
-    # 검색 쿼리 확장 (목차 관련 질문인 경우)
-    search_query = message
-    if is_toc_query:
-        search_query = f"{message} 목차 차례 구성 내용"
-        print(f"[DEBUG] 목차 관련 질문 감지. 확장된 검색 쿼리: '{search_query}'")
+    # 목차 관련 검색 확장
+    is_toc_query = any(keyword in message for keyword in ["목차", "차례", "내용"])
+    search_query = f"{message} 목차 차례 구성" if is_toc_query else message
 
     query_embedding = await get_embedding_async(search_query)
     if query_embedding is None:
-        print(f"[ERROR] search_similar_documents: 쿼리 임베딩 생성 실패: 사용자 {user_id}.")
         return []
 
-    print(f"[DEBUG] search_similar_documents: FAISS 인덱스 검색 (총 크기: {index.ntotal}) - 사용자: {user_id}")
     try:
-        # 목차 관련 질문인 경우 더 많은 결과 검색
-        k_search = min(index.ntotal, 15 if is_toc_query else 7) 
-        print(f"[DEBUG] search_similar_documents: k_search 값: {k_search}")
-        if k_search == 0 : 
-             print(f"[DEBUG] search_similar_documents: 인덱스가 사실상 비어있음 (k_search=0). 사용자 {user_id}.")
-             return []
-
-        D, I = index.search(np.array([query_embedding]), k=k_search)
-        print(f"[DEBUG] search_similar_documents: FAISS 검색 원본 결과 - 사용자 {user_id} - 인덱스: {I}, 거리: {D}")
+        k = min(index.ntotal, 15 if is_toc_query else 7)
+        D, I = index.search(np.array([query_embedding]), k=k)
     except Exception as e:
-        print(f"[ERROR] search_similar_documents: FAISS 검색 오류 - 사용자 {user_id}: {e}")
+        print(f"[ERROR] 검색 실패: {e}")
         return []
 
-    # referenced_docs_content 대신 referenced_docs_details 로 변경하여 메타데이터 포함
-    referenced_docs_details = [] 
-    if I is not None and len(I[0]) > 0:
-        print(f"[DEBUG] search_similar_documents: FAISS 결과 {len(I[0])}개 항목 필터링 시작 - 사용자: {user_id}")
-        unique_doc_ids = set() # 중복된 doc_id의 전체 메타데이터 반환 방지
+    results = []
+    for doc_index in I[0]:
+        if 0 <= doc_index < len(doc_store):
+            item = doc_store[doc_index]
+            if item.get('user_id') == user_id:
+                results.append(item)
 
-        for rank, doc_index in enumerate(I[0]):
-            print(f"[DEBUG] search_similar_documents: 필터링 중 - rank: {rank}, doc_index: {doc_index}")
-            if 0 <= doc_index < len(doc_store): 
-                item = doc_store[doc_index]
-                # user_id로 필터링하고, 아직 추가되지 않은 doc_id인 경우에만 추가
-                if isinstance(item, dict) and item.get('user_id') == user_id:
-                    # 목차 관련 질문인 경우 목차 관련 내용 우선 선택
-                    if is_toc_query:
-                        item_text = item.get('text', '').lower()
-                        if any(keyword in item_text for keyword in table_of_contents_keywords):
-                            # 목차 관련 내용을 최상위로 이동
-                            referenced_docs_details.insert(0, item)
-                            print(f"[DEBUG] 목차 관련 내용 우선 선택: {item.get('doc_id')}")
-                        else:
-                            referenced_docs_details.append(item)
-                    else:
-                        # 검색 결과에는 문단 텍스트와 함께 전체 문서의 메타데이터를 포함시킬 수 있음
-                        # 여기서는 검색된 문단(item) 자체를 반환 (이미 메타데이터 포함)
-                        referenced_docs_details.append(item) 
-                    print(f"[DEBUG] search_similar_documents: 사용자 {user_id} 문서 일치! referenced_docs_details에 추가됨: {item.get('doc_id')}, {item.get('title')}")
-                else:
-                    print(f"[DEBUG] search_similar_documents: 사용자 {user_id} 문서 불일치 (doc_store user_id: {item.get('user_id')}).")
-            else:
-                print(f"[WARNING] search_similar_documents: FAISS 검색 결과의 잘못된 인덱스 {doc_index} (doc_store 크기: {len(doc_store)}) - 사용자 {user_id}.")
-        
-        print(f"[DEBUG] search_similar_documents: 사용자 {user_id}에 대해 {len(I[0])}개의 원본 결과에서 {len(referenced_docs_details)}개의 상세 정보가 최종 필터링됨.")
-    else:
-        print(f"[DEBUG] search_similar_documents: 사용자 {user_id}에 대한 FAISS 검색 결과가 없습니다 (I is None or 비어있음).")
-    
-    return referenced_docs_details # 상세 정보 반환
+    return results
 
-async def search_recent_documents_first(query: str, user_id: str):
-    """최근 업로드된 문서를 우선적으로 검색하는 함수"""
-    print(f"[DEBUG] search_recent_documents_first: 최근 문서 우선 검색 시작 - 사용자: {user_id}, 쿼리: '{query}'")
-    
-    # 먼저 일반 검색 수행
+async def search_recent_documents_first(query: str, user_id: str) -> List[Dict[str, Any]]:
+    """최근 문서 우선 검색"""
     all_results = await search_similar_documents(query, user_id)
     if not all_results:
-        print(f"[DEBUG] search_recent_documents_first: 검색 결과 없음 - 사용자: {user_id}")
         return []
-    
-    # 최근 업로드된 문서를 우선적으로 정렬
-    # doc_id가 높을수록 최근에 업로드된 것으로 가정
+
     try:
-        # created_at이 있으면 시간순으로 정렬, 없으면 doc_id 순으로 정렬
-        sorted_results = sorted(all_results, key=lambda x: (
-            x.get('created_at') if x.get('created_at') else x.get('doc_id', 0)
-        ), reverse=True)
-        
-        print(f"[DEBUG] search_recent_documents_first: {len(sorted_results)}개 결과를 최신순으로 정렬 완료 - 사용자: {user_id}")
-        
-        # 최근 문서 우선 반환 (최대 5개)
-        recent_first_results = sorted_results[:5]
-        
-        print(f"[DEBUG] search_recent_documents_first: 최신 {len(recent_first_results)}개 문서 반환 - 사용자: {user_id}")
-        return recent_first_results
-        
-    except Exception as e:
-        print(f"[ERROR] search_recent_documents_first: 정렬 오류 - 사용자 {user_id}: {e}")
-        # 오류 발생시 원본 결과 반환
+        # 최신순 정렬
+        sorted_results = sorted(
+            all_results, 
+            key=lambda x: x.get('created_at', x.get('doc_id', 0)), 
+            reverse=True
+        )
+        return sorted_results[:5]
+    except:
         return all_results[:5]
 
-async def process_pdf(task_id: str, file_path: str, filename: str, session_factory, logs, user_id: str):
-    # 초기화
-    print(f"[DEBUG] process_pdf 시작 - Task ID: {task_id}, Filename: {filename}")
-    task_statuses[task_id] = {"status": "pending", "logs": [], "page_count": 0, "filename": filename}
-    print(f"[DEBUG] task_statuses 초기화 - Task ID: {task_id}, 상태: {task_statuses[task_id]}")
-
-    logs.append(f"처리 시작: {filename} (사용자: {user_id})")
-    task_statuses[task_id]["status"] = "processing"
-    task_statuses[task_id]["logs"] = logs
-    print(f"[DEBUG] task_statuses 업데이트 - Task ID: {task_id}, 상태: {task_statuses[task_id]}")
-
-    processed_successfully = False
-    page_count = 0
-
+async def process_pdf(task_id: str, file_path: str, filename: str, session_factory, logs: List[str], user_id: str):
+    """PDF 처리 함수"""
+    print(f"[INFO] PDF 처리 시작: {filename}")
+    
+    # 상태 초기화
+    task_statuses[task_id] = {
+        "status": "processing", 
+        "logs": logs, 
+        "page_count": 0, 
+        "filename": filename
+    }
+    
     try:
-        # Create a new session for this task using the passed session_factory
         async with session_factory() as session:
-            async with session.begin(): # Start a transaction
-                logs.append(f"DB 세션 시작됨 (사용자: {user_id}, 파일: {filename})")
-                print(f"[DEBUG] DB 세션 시작 - Task ID: {task_id}")
-
+            async with session.begin():
+                # PDF 파일 열기
                 doc = fitz.open(file_path)
                 page_count = len(doc)
                 task_statuses[task_id]["page_count"] = page_count
-                logs.append(f"'{filename}' 에서 {page_count} 페이지 로드됨 (사용자: {user_id})")
-                print(f"[DEBUG] PDF 로드 완료 - Task ID: {task_id}, 페이지 수: {page_count}")
-
-                # ...existing code...
-
+                
+                logs.append(f"PDF 로드 완료: {page_count}페이지")
+                
+                all_text = ""
+                for page_num in range(page_count):
+                    page = doc.load_page(page_num)
+                    text = page.get_text()
+                    all_text += text + "\n\n"
+                    logs.append(f"페이지 {page_num + 1} 처리 완료")
+                
+                doc.close()
+                
+                # 메타데이터 생성
+                title_prompt = f"다음 문서의 제목을 한 줄로 요약해주세요:\n\n{all_text[:500]}"
+                summary_prompt = f"다음 문서를 3-4문장으로 요약해주세요:\n\n{all_text[:1500]}"
+                
+                # GPT로 메타데이터 생성
+                title_response = client.chat.completions.create(
+                    model="gpt-3.5-turbo",
+                    messages=[{"role": "user", "content": title_prompt}],
+                    max_tokens=50
+                )
+                title = title_response.choices[0].message.content.strip()
+                
+                summary_response = client.chat.completions.create(
+                    model="gpt-3.5-turbo", 
+                    messages=[{"role": "user", "content": summary_prompt}],
+                    max_tokens=200
+                )
+                summary = summary_response.choices[0].message.content.strip()
+                
+                response_style = "친절하고 상세한 설명을 제공하는 전문적인 톤"
+                
+                # 데이터베이스에 저장
+                insert_stmt = documents.insert().values(
+                    user_id=user_id,
+                    pdf_name=filename,
+                    page_number=1,
+                    content=all_text,
+                    title=title,
+                    summary=summary,
+                    response_style=response_style
+                )
+                result = await session.execute(insert_stmt)
+                doc_id = result.inserted_primary_key[0]
+                
+                # 임베딩 생성 및 저장
+                paragraphs = split_text_to_paragraphs(all_text)
+                for paragraph in paragraphs:
+                    embedding = await get_embedding_async(paragraph)
+                    if embedding is not None:
+                        emb_stmt = embeddings.insert().values(
+                            user_id=user_id,
+                            document_id=doc_id,
+                            embedding=embedding.tobytes()
+                        )
+                        await session.execute(emb_stmt)
+                
+                await session.commit()
+                logs.append(f"PDF 처리 완료: {filename}")
+                
+                # FAISS 인덱스 재로드
+                await load_faiss_and_docstore()
+                
+                task_statuses[task_id]["status"] = "completed"
+                
     except Exception as e:
-        print(f"[ERROR] process_pdf 실패 - Task ID: {task_id}, 오류: {e}")
+        print(f"[ERROR] PDF 처리 실패: {e}")
+        task_statuses[task_id]["status"] = "failed"
+        logs.append(f"처리 실패: {str(e)}")
     finally:
-        print(f"[DEBUG] process_pdf 종료 - Task ID: {task_id}, 최종 상태: {task_statuses.get(task_id)}")
+        # 임시 파일 삭제
+        if os.path.exists(file_path):
+            os.remove(file_path)
