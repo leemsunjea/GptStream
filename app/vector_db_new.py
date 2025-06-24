@@ -7,7 +7,7 @@ from openai.types.chat import ChatCompletionMessageParam
 from typing import List
 
 # 환경변수에서 OPENAI_API_KEY를 읽어옴
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "sk-...your-key...")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 client = OpenAI(api_key=OPENAI_API_KEY)
 
 async def stream_chat(messages: List[ChatCompletionMessageParam]) -> str:

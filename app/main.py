@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.templating import Jinja2Templates
 from openai import OpenAI
 import os
 from dotenv import load_dotenv
@@ -10,6 +11,7 @@ load_dotenv()
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 app = FastAPI()
+templates = Jinja2Templates(directory="app/templates")
 
 app.add_middleware(
     CORSMiddleware,
@@ -18,6 +20,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.get("/", response_class=HTMLResponse)
+async def read_root(request: Request):
+    return templates.TemplateResponse("index.html", {"request": request})
 
 @app.post("/chat/stream")
 async def chat_stream(request: Request):
