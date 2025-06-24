@@ -34,7 +34,7 @@ def fetch_n8n_prompt(user_input: str, history: list) -> Any:
         "chat_history": history
     }
     response = requests.post(
-        "https://sunjea1149.app.n8n.cloud/webhook/prompt-rag",
+        "https://sunjea1149.app.n8n.cloud/webhook-test/prompt-rag",
         json=payload
     )
     return response.json()
