@@ -188,7 +188,7 @@
         })
           .then(response => {
             if (!response.ok) {
-              throw new Error('서버 응답 오류');
+              throw new Error(`HTTP 오류! 상태: ${response.status}`);
             }
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
@@ -198,22 +198,52 @@
             chatBody.appendChild(botMessageDiv);
             chatBody.scrollTop = chatBody.scrollHeight;
 
-            async function processStream() {
-              while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
+            let buffer = ""; // 들어오는 데이터를 위한 버퍼
 
-                const chunk = decoder.decode(value, { stream: true });
-                const lines = chunk.split("\n");
-                for (let line of lines) {
-                  if (line.startsWith("data: ")) {
-                    const text = line.slice("data: ".length);
-                    if (text !== "[DONE]") {
-                      partialResponse += text;
-                      botMessageDiv.textContent = partialResponse;
-                      chatBody.scrollTop = chatBody.scrollHeight;
+            async function processStream() {
+              try {
+                while (true) {
+                  const { done, value } = await reader.read();
+                  if (done) {
+                    console.log("스트림 완료");
+                    break;
+                  }
+
+                  buffer += decoder.decode(value, { stream: true }); // 새 데이터를 버퍼에 추가
+
+                  // 버퍼에 완전한 이벤트가 있는 한 이벤트를 처리
+                  let newlineIndex;
+                  while ((newlineIndex = buffer.indexOf('\n\n')) !== -1) {
+                    const eventString = buffer.substring(0, newlineIndex);
+                    buffer = buffer.substring(newlineIndex + 2); // 처리된 이벤트를 버퍼에서 제거
+
+                    if (eventString.startsWith("data: ")) {
+                      const text = eventString.slice("data: ".length);
+                      if (text === "[DONE]") {
+                        console.log("[DONE] 수신");
+                        sendButton.style.display = "block"; // 완료 후 보내기 버튼 표시
+                        return; // 스트림 처리 종료
+                      } else if (text.startsWith("[ERROR]")) {
+                        console.error("봇 오류:", text);
+                        botMessageDiv.textContent = `오류: ${text.replace("[ERROR]", "").trim()}`;
+                        sendButton.style.display = "block";
+                        return; // 오류 발생 시 처리 중지
+                      } else {
+                        // !!! 핵심: 여기에서 partialResponse에 추가하고 즉시 업데이트합니다. !!!
+                        partialResponse += text;
+                        botMessageDiv.textContent = partialResponse;
+                        chatBody.scrollTop = chatBody.scrollHeight;
+                      }
                     }
                   }
+                }
+              } catch (error) {
+                console.error("스트림 처리 오류:", error);
+                botMessageDiv.textContent = "오류가 발생했습니다. 다시 시도해주세요.";
+                sendButton.style.display = "block";
+              } finally {
+                if (sendButton.style.display === "none") {
+                  sendButton.style.display = "block";
                 }
               }
             }
@@ -221,26 +251,12 @@
           })
           .catch(error => {
             console.error("메시지 전송 오류:", error);
-            appendMessage("bot", "오류가 발생했습니다. 다시 시도해주세요.");
+            appendMessage("bot", `메시지 전송 중 오류가 발생했습니다: ${error.message}`);
+            sendButton.style.display = "block";
           });
       }
 
-      function appendMessage(sender, message) {
-        const messageDiv = document.createElement("div");
-        messageDiv.classList.add("message", sender);
-        messageDiv.textContent = message;
-        chatBody.appendChild(messageDiv);
-        chatBody.scrollTop = chatBody.scrollHeight;
-      }
-
-      sendButton.addEventListener("click", sendMessage);
-
-      chatInput.addEventListener("keypress", function (event) {
-        if (event.key === "Enter" && !event.shiftKey) {
-          event.preventDefault();
-          sendMessage();
-        }
-      });
+      // ... (appendMessage, sendButton.addEventListener, chatInput.addEventListener) ...
     });
   </script>
 </body>
