@@ -192,6 +192,11 @@
             }
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
+            let partialResponse = "";
+            let botMessageDiv = document.createElement("div");
+            botMessageDiv.classList.add("message", "bot");
+            chatBody.appendChild(botMessageDiv);
+            chatBody.scrollTop = chatBody.scrollHeight;
 
             async function processStream() {
               while (true) {
@@ -204,11 +209,8 @@
                   if (line.startsWith("data: ")) {
                     const text = line.slice("data: ".length);
                     if (text !== "[DONE]") {
-                      // chunk마다 새로운 div 생성
-                      const botMessageDiv = document.createElement("div");
-                      botMessageDiv.classList.add("message", "bot");
-                      botMessageDiv.textContent = text;
-                      chatBody.appendChild(botMessageDiv);
+                      partialResponse += text;
+                      botMessageDiv.textContent = partialResponse;
                       chatBody.scrollTop = chatBody.scrollHeight;
                     }
                   }
