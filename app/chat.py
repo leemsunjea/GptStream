@@ -44,13 +44,12 @@ async def stream_chat(user_input: str, history: list):
     try:
         n8n_result = fetch_n8n_prompt(user_input, history)
         messages = n8n_result.get("messages", [])
-        def get_stream():
-            return client.chat.completions.create(
-                model="gpt-3.5-turbo",
-                messages=messages,
-                stream=True
-            )
-        response_stream = await asyncio.get_event_loop().run_in_executor(None, get_stream)
+        # OpenAI 스트림 응답을 동기적으로 직접 이터레이션
+        response_stream = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=messages,
+            stream=True
+        )
         for chunk in response_stream:
             delta = getattr(chunk.choices[0].delta, "content", None)
             if delta:
