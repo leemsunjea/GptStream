@@ -44,6 +44,25 @@ async def stream_chat(user_input: str, history: list):
     try:
         n8n_result = fetch_n8n_prompt(user_input, history)
         messages = n8n_result.get("messages", [])
+
+        # messages 값 자체를 반환 (디버깅용)
+        yield f"[DEBUG] messages: {messages}"
+
+        # 구조 검증
+        if not isinstance(messages, list):
+            yield "[ERROR] n8n messages가 리스트가 아닙니다."
+            return
+        for i, msg in enumerate(messages):
+            if not isinstance(msg, dict):
+                yield f"[ERROR] messages[{i}]가 dict가 아닙니다: {msg}"
+                return
+            if "role" not in msg or "content" not in msg:
+                yield f"[ERROR] messages[{i}]에 role/content 키가 없습니다: {msg}"
+                return
+            if not msg["content"]:
+                yield f"[ERROR] messages[{i}]의 content가 비어있습니다."
+                return
+
         # OpenAI 스트림 응답을 동기적으로 직접 이터레이션
         response_stream = client.chat.completions.create(
             model="gpt-3.5-turbo",
