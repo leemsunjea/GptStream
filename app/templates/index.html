@@ -173,9 +173,6 @@
       const sendButton = document.getElementById("sendButton");
       const chatBody = document.getElementById("chat-body");
 
-      let lastBotMessageDiv = null;
-      let partialResponse = "";
-
       function sendMessage() {
         const message = chatInput.value.trim();
         if (message === "") return;
@@ -183,9 +180,6 @@
         appendMessage("user", message);
         chatInput.value = "";
         sendButton.style.display = "none";
-
-        partialResponse = "";
-        lastBotMessageDiv = null;
 
         fetch('/chat/stream', {
           method: 'POST',
@@ -210,15 +204,11 @@
                   if (line.startsWith("data: ")) {
                     const text = line.slice("data: ".length);
                     if (text !== "[DONE]") {
-                      partialResponse += text;
-
-                      if (!lastBotMessageDiv) {
-                        lastBotMessageDiv = document.createElement("div");
-                        lastBotMessageDiv.classList.add("message", "bot");
-                        chatBody.appendChild(lastBotMessageDiv);
-                      }
-
-                      lastBotMessageDiv.textContent = partialResponse;
+                      // chunk마다 새로운 div 생성
+                      const botMessageDiv = document.createElement("div");
+                      botMessageDiv.classList.add("message", "bot");
+                      botMessageDiv.textContent = text;
+                      chatBody.appendChild(botMessageDiv);
                       chatBody.scrollTop = chatBody.scrollHeight;
                     }
                   }
