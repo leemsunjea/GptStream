@@ -39,23 +39,24 @@ def fetch_n8n_prompt(user_input: str, history: list) -> Any:
     )
     return response.json()
 
-async def stream_chat(user_input: str, history: list) -> str:
-    """n8n에서 messages를 받아 OpenAI API로 전달하는 함수"""
+async def stream_chat(user_input: str, history: list):
+    """n8n에서 messages를 받아 OpenAI API로 전달하는 함수 (실시간 스트리밍 지원)"""
     try:
         n8n_result = fetch_n8n_prompt(user_input, history)
         messages = n8n_result.get("messages", [])
-        response = await asyncio.get_event_loop().run_in_executor(
-            None,
-            lambda: client.chat.completions.create(
+        def get_stream():
+            return client.chat.completions.create(
                 model="gpt-3.5-turbo",
                 messages=messages,
-                stream=False
+                stream=True
             )
-        )
-        content = response.choices[0].message.content
-        return content.strip() if content else ""
+        response_stream = await asyncio.get_event_loop().run_in_executor(None, get_stream)
+        for chunk in response_stream:
+            delta = getattr(chunk.choices[0].delta, "content", None)
+            if delta:
+                yield delta
     except Exception as e:
-        return f"[ERROR] 챗봇 응답 실패: {e}"
+        yield f"[ERROR] 챗봇 응답 실패: {e}"
 
 @app.get("/", response_class=HTMLResponse)
 async def read_root(request: Request):
@@ -68,8 +69,8 @@ async def chat_stream(request: Request):
     history = data.get("history", [])
 
     async def event_stream():
-        content = await stream_chat(message, history)
-        yield f"data: {content}\n\n"
+        async for chunk in stream_chat(message, history):
+            yield f"data: {chunk}\n\n"
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
