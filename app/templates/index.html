@@ -256,7 +256,25 @@
           });
       }
 
-      // ... (appendMessage, sendButton.addEventListener, chatInput.addEventListener) ...
+      // 메시지 추가 함수 정의
+      function appendMessage(sender, text) {
+        const messageDiv = document.createElement("div");
+        messageDiv.classList.add("message", sender);
+        messageDiv.textContent = text;
+        chatBody.appendChild(messageDiv);
+        chatBody.scrollTop = chatBody.scrollHeight;
+      }
+
+      // 보내기 버튼 클릭 시 메시지 전송
+      sendButton.addEventListener("click", sendMessage);
+
+      // 입력창에서 엔터키 입력 시 메시지 전송
+      chatInput.addEventListener("keydown", function (event) {
+        if (event.key === "Enter" && !event.shiftKey) {
+          event.preventDefault();
+          sendMessage();
+        }
+      });
     });
   </script>
 </body>
